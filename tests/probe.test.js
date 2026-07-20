@@ -8,39 +8,31 @@ import {
   parseProbeFlagKeys,
   parseStreamingMessage,
 } from "../k6/lib/probe.js";
+import { createProbeFlag } from "./helpers/probe-fixtures.js";
 
-function createProbeFlag(overrides = {}) {
-  return {
-    key: "loadtest-sync-probe",
-    updatedAt: "2026-07-20T12:00:00.123Z",
-    variationType: "string",
-    variations: [
-      { id: "active", value: "rev-001" },
-      { id: "inactive", value: "unused" },
-    ],
-    targetUsers: [],
-    rules: [],
-    isEnabled: true,
-    disabledVariationId: "inactive",
-    fallthrough: {
-      variations: [{ id: "active", rollout: [0, 1] }],
-    },
-    ...overrides,
-  };
+const listParserCases = [
+  {
+    name: "expected revision",
+    parse: parseExpectedRevisions,
+    input: "rev-001, rev-002",
+    expected: ["rev-001", "rev-002"],
+    duplicateInput: "rev-001,rev-001",
+  },
+  {
+    name: "probe flag key",
+    parse: parseProbeFlagKeys,
+    input: "loadtest-01, loadtest-02",
+    expected: ["loadtest-01", "loadtest-02"],
+    duplicateInput: "loadtest-01,loadtest-01",
+  },
+];
+
+for (const { name, parse, input, expected, duplicateInput } of listParserCases) {
+  test(`parses and de-duplicates the ${name} list`, () => {
+    assert.deepEqual(parse(input), expected);
+    assert.throws(() => parse(duplicateInput), /duplicate/);
+  });
 }
-
-test("parses and de-duplicates the expected revision list", () => {
-  assert.deepEqual(parseExpectedRevisions("rev-001, rev-002"), ["rev-001", "rev-002"]);
-  assert.throws(() => parseExpectedRevisions("rev-001,rev-001"), /duplicate/);
-});
-
-test("parses and de-duplicates the probe flag key list", () => {
-  assert.deepEqual(parseProbeFlagKeys("loadtest-01, loadtest-02"), [
-    "loadtest-01",
-    "loadtest-02",
-  ]);
-  assert.throws(() => parseProbeFlagKeys("loadtest-01,loadtest-01"), /duplicate/);
-});
 
 test("parses FeatBit full and pong messages", () => {
   const full = parseStreamingMessage(
