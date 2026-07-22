@@ -27,10 +27,10 @@ spec:
     resources:
       requests:
         cpu: 500m
-        memory: 512Mi
+        memory: __RUNNER_MEMORY_REQUEST__
       limits:
         cpu: "4"
-        memory: 4Gi
+        memory: __RUNNER_MEMORY_LIMIT__
     securityContext:
       runAsNonRoot: true
       runAsUser: 12345

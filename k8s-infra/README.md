@@ -164,6 +164,10 @@ kubectl --context docker-desktop -n featbit port-forward service/featbit-els 301
 | `baseline` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-10` | 10 | 1,000 | 10/s | 30s | 600s |
 | `growth` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-20` | 20 | 5,000 | 50/s | 30s | 600s |
 
+runner 资源按 Profile 分配：smoke/baseline 使用 `512Mi` memory request 与 `4Gi` limit；growth
+使用 `4Gi` request 与 `8Gi` limit，以容纳 5,000 个独立 k6 VU、WebSocket 状态和 20 个 probe
+flag 的同步峰值。调度前请确保节点至少能满足该 request。
+
 每轮 provision 会：
 
 1. 确认当前没有 Pending/Running 的负载测试；
@@ -306,7 +310,8 @@ baseline 自然结束并通过后运行 growth：
 `controller_warmup_updates == 40`、`controller_revision_updates == 40`。
 
 运行 growth 前确认 Docker Desktop 为 5,000 条 WebSocket 和三个 ELS Pod 留有足够 CPU/内存；
-资源不足导致的运行属于本地环境瓶颈，不能直接当作 FeatBit 容量结论。
+growth runner 会请求 `4Gi`、限制为 `8Gi`。资源不足导致的运行属于本地环境瓶颈，不能直接
+当作 FeatBit 容量结论。
 
 ### 后台提交
 

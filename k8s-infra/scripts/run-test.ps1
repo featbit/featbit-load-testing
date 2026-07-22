@@ -24,6 +24,8 @@ function Get-TestProfile {
                 InitialSyncTimeoutSeconds = 10
                 HoldDurationSeconds = 180
                 DrainDurationSeconds = 10
+                RunnerMemoryRequest = "512Mi"
+                RunnerMemoryLimit = "4Gi"
             }
         }
         "baseline" {
@@ -35,6 +37,8 @@ function Get-TestProfile {
                 InitialSyncTimeoutSeconds = 20
                 HoldDurationSeconds = 600
                 DrainDurationSeconds = 10
+                RunnerMemoryRequest = "512Mi"
+                RunnerMemoryLimit = "4Gi"
             }
         }
         "growth" {
@@ -46,6 +50,8 @@ function Get-TestProfile {
                 InitialSyncTimeoutSeconds = 20
                 HoldDurationSeconds = 600
                 DrainDurationSeconds = 10
+                RunnerMemoryRequest = "4Gi"
+                RunnerMemoryLimit = "8Gi"
             }
         }
         default {
@@ -193,6 +199,8 @@ $tokens = [ordered]@{
     "__INITIAL_SYNC_TIMEOUT_SECONDS__" = $profileConfig.InitialSyncTimeoutSeconds
     "__HOLD_DURATION_SECONDS__" = $profileConfig.HoldDurationSeconds
     "__DRAIN_DURATION_SECONDS__" = $profileConfig.DrainDurationSeconds
+    "__RUNNER_MEMORY_REQUEST__" = $profileConfig.RunnerMemoryRequest
+    "__RUNNER_MEMORY_LIMIT__" = $profileConfig.RunnerMemoryLimit
 }
 
 foreach ($token in $tokens.GetEnumerator()) {
