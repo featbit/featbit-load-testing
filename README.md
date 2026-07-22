@@ -120,8 +120,9 @@ Measured hold: `T+130s` through `T+730s`.
 Docker Desktop Kubernetes runs use the REST controller documented in
 [`k8s-infra/README.md`](k8s-infra/README.md). With `AUTO_CONTROL_REVISIONS=true`, the
 same k6 runner restores every probe flag to `baseline` in `setup()`, applies
-`rev-001` and then `rev-002` during the measured hold, and restores `baseline` in
-`teardown()`. No manual flag changes are required.
+an unmeasured `baseline -> rev-001 -> baseline` warm-up before any WebSocket is
+opened, applies `rev-001` and then `rev-002` during the measured hold, and restores
+`baseline` in `teardown()`. No manual flag changes are required.
 
 For a direct k6 run without the REST controller, use the following manual process.
 

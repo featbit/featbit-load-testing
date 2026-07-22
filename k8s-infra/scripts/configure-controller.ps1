@@ -19,6 +19,9 @@ param(
 
     [string] $ClusterApiUrl = "http://featbit-api.featbit.svc.cluster.local:5000",
 
+    [ValidateRange(0, 60)]
+    [int] $WarmupSettleSeconds = 2,
+
     [ValidateRange(0, 300)]
     [int] $StartDelaySeconds = 5,
 
@@ -160,6 +163,7 @@ try {
         --from-literal="AUTO_CONTROL_REVISIONS=true" `
         --from-literal="FEATBIT_API_URL=$normalizedClusterApiUrl" `
         --from-literal="FEATBIT_ENVIRONMENT_ID=$resolvedEnvironmentId" `
+        --from-literal="CONTROLLER_WARMUP_SETTLE_SECONDS=$WarmupSettleSeconds" `
         --from-literal="CONTROLLER_START_DELAY_SECONDS=$StartDelaySeconds" `
         --from-literal="CONTROLLER_REVISION_INTERVAL_SECONDS=$RevisionIntervalSeconds" `
         --from-literal="CONTROLLER_FINAL_SETTLE_SECONDS=$FinalSettleSeconds" `
@@ -209,6 +213,7 @@ try {
     Write-Host "Environment: $($environment.name) [$($environment.key)]"
     Write-Host "Environment ID: $resolvedEnvironmentId"
     Write-Host "Runner API URL: $normalizedClusterApiUrl"
+    Write-Host "Pre-test warm-up settle: ${WarmupSettleSeconds}s per step"
 }
 finally {
     if ($secretPointer -ne [IntPtr]::Zero) {

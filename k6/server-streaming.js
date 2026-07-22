@@ -79,6 +79,11 @@ const CLOCK_SKEW_TOLERANCE_MS = integerEnv("CLOCK_SKEW_TOLERANCE_MS", 1_000, 0);
 const DEBUG = booleanEnv("DEBUG");
 const STRICT_PATCH_DELIVERY = booleanEnv("STRICT_PATCH_DELIVERY");
 const AUTO_CONTROL_REVISIONS = booleanEnv("AUTO_CONTROL_REVISIONS");
+const CONTROLLER_WARMUP_SETTLE_SECONDS = integerEnv(
+  "CONTROLLER_WARMUP_SETTLE_SECONDS",
+  2,
+  0,
+);
 const CONTROLLER_START_DELAY_SECONDS = integerEnv("CONTROLLER_START_DELAY_SECONDS", 5, 0);
 const CONTROLLER_REVISION_INTERVAL_SECONDS = integerEnv(
   "CONTROLLER_REVISION_INTERVAL_SECONDS",
@@ -124,6 +129,7 @@ const unexpectedRevision = new Counter("unexpected_revision");
 const clockSkewDetected = new Counter("clock_skew_detected");
 const probeRevisionReceived = new Counter("probe_revision_received");
 const controllerApiError = new Counter("controller_api_error");
+const controllerWarmupUpdates = new Counter("controller_warmup_updates");
 const controllerRevisionUpdates = new Counter("controller_revision_updates");
 
 const connectionOpenSuccess = new Rate("connection_open_success");
@@ -184,11 +190,16 @@ if (STRICT_PATCH_DELIVERY) {
 
 for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
   thresholds[`probe_revision_coverage{revision_index:${index + 1}}`] = ["rate==1"];
+  thresholds[`probe_sync_latency_ms{revision_index:${index + 1}}`] = [
+    `p(95)<${SYNC_P95_MS}`,
+    `p(99)<${SYNC_P99_MS}`,
+  ];
 }
 
 if (AUTO_CONTROL_REVISIONS) {
   thresholds.controller_api_error = ["count==0"];
   thresholds.controller_update_success = ["rate==1"];
+  thresholds.controller_warmup_updates = [`count==${PROBE_FLAG_KEYS.length * 2}`];
   thresholds.controller_revision_updates = [
     `count==${PROBE_FLAG_KEYS.length * EXPECTED_REVISIONS.length}`,
   ];
@@ -360,7 +371,13 @@ function isRevisionConflict(error) {
   );
 }
 
-function setProbeFlagValue(flagKey, targetValue, phase, recordExpectedRevision) {
+function setProbeFlagValue(
+  flagKey,
+  targetValue,
+  phase,
+  recordExpectedRevision,
+  recordWarmupUpdate,
+) {
   const metricTags = {
     flag_key: flagKey,
     phase,
@@ -371,7 +388,7 @@ function setProbeFlagValue(flagKey, targetValue, phase, recordExpectedRevision) 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const flag = getControllerFlag(flagKey);
       if (getDeterministicServedValue(flag) === targetValue) {
-        if (recordExpectedRevision) {
+        if (recordExpectedRevision || recordWarmupUpdate) {
           throw new Error(
             `feature flag '${flagKey}' already served '${targetValue}' before the controller update`,
           );
@@ -417,6 +434,9 @@ function setProbeFlagValue(flagKey, targetValue, phase, recordExpectedRevision) 
       if (recordExpectedRevision) {
         controllerRevisionUpdates.add(1, metricTags);
       }
+      if (recordWarmupUpdate) {
+        controllerWarmupUpdates.add(1, metricTags);
+      }
       return;
     }
   } catch (error) {
@@ -426,9 +446,20 @@ function setProbeFlagValue(flagKey, targetValue, phase, recordExpectedRevision) 
   }
 }
 
-function setAllProbeFlags(targetValue, phase, recordExpectedRevision = false) {
+function setAllProbeFlags(
+  targetValue,
+  phase,
+  recordExpectedRevision = false,
+  recordWarmupUpdate = false,
+) {
   for (const flagKey of PROBE_FLAG_KEYS) {
-    setProbeFlagValue(flagKey, targetValue, phase, recordExpectedRevision);
+    setProbeFlagValue(
+      flagKey,
+      targetValue,
+      phase,
+      recordExpectedRevision,
+      recordWarmupUpdate,
+    );
   }
 }
 
@@ -492,6 +523,20 @@ export function setup() {
   if (AUTO_CONTROL_REVISIONS) {
     console.log(`[controller] restoring ${PROBE_FLAG_KEYS.length} probe flag(s) to baseline`);
     setAllProbeFlags(PROBE_INITIAL_VALUE, "pre-run baseline");
+
+    const warmupRevision = EXPECTED_REVISIONS[0];
+    console.log(
+      `[controller] pre-warming ${PROBE_FLAG_KEYS.length} probe flag(s): ` +
+        `${PROBE_INITIAL_VALUE} -> ${warmupRevision} -> ${PROBE_INITIAL_VALUE}`,
+    );
+    setAllProbeFlags(warmupRevision, "pre-run warm-up revision", false, true);
+    if (CONTROLLER_WARMUP_SETTLE_SECONDS > 0) {
+      sleep(CONTROLLER_WARMUP_SETTLE_SECONDS);
+    }
+    setAllProbeFlags(PROBE_INITIAL_VALUE, "pre-run baseline after warm-up", false, true);
+    if (CONTROLLER_WARMUP_SETTLE_SECONDS > 0) {
+      sleep(CONTROLLER_WARMUP_SETTLE_SECONDS);
+    }
   }
 
   const holdStartsAt = RAMP_UP_SECONDS + STABILIZATION_SECONDS;
@@ -503,7 +548,7 @@ export function setup() {
       `- probe flags (${PROBE_FLAG_KEYS.length}): ${PROBE_FLAG_KEYS.join(", ")}`,
       `- initial value for every probe flag: ${PROBE_INITIAL_VALUE}`,
       AUTO_CONTROL_REVISIONS
-        ? `- REST controller: automatic ${PROBE_INITIAL_VALUE} -> ${EXPECTED_REVISIONS.join(" -> ")}`
+        ? `- REST controller: pre-warmed, then automatic ${PROBE_INITIAL_VALUE} -> ${EXPECTED_REVISIONS.join(" -> ")}`
         : `- during the measured hold, update every probe flag in this order: ${EXPECTED_REVISIONS.join(" -> ")}`,
       `- duplicate/stale patch delivery: ${STRICT_PATCH_DELIVERY ? "strict (recorded and fails the run)" : "ignored (SDK-compatible)"}`,
     ].join("\n"),
