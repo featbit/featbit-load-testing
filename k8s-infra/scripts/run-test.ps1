@@ -164,6 +164,10 @@ $probeFlagKeys = ((1..$profileConfig.ProbeFlagCount) | ForEach-Object {
     "loadtest-sync-probe-{0:D2}" -f $_
 }) -join ","
 
+Write-Host "Provisioning $($profileConfig.ProbeFlagCount) probe flag(s) for profile '$profileName' ..."
+& (Join-Path $PSScriptRoot "prepare-probe-flags.ps1") `
+    -ProbeFlagCount $profileConfig.ProbeFlagCount
+
 $gitSha = (& git -C $repositoryRoot rev-parse --short=8 HEAD 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($gitSha)) {
     $gitSha = "nogit"

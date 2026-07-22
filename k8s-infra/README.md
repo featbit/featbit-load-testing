@@ -11,12 +11,15 @@ JSON 与 HTML 报告。
 
 1. 初始化 k6 Operator、runner 镜像和结果存储。
 2. 使用固定 Helm chart 部署本地 FeatBit。
-3. 在同一个 FeatBit environment 中准备 probe flags、Server SDK secret 和 OpenAPI token。
+3. 获取同一个 FeatBit environment 的 Server SDK secret 和 OpenAPI token。
 4. 配置 k6 streaming target 与 REST controller。
-5. 先运行 smoke；probe flags 准备完整后再运行 baseline 或 growth。
+5. 先运行 smoke，再运行 baseline，最后按需运行 growth；每轮自动重建该 Profile 的 probe flags。
 6. 查看实时 Dashboard，并从 `results/` 读取最终报告。
 
 所有命令都从仓库根目录、使用 PowerShell 7 执行。
+
+让 Codex 代跑时，只需说明 `smoke`、`baseline` 或 `growth` 以及本轮 Note。Codex 负责执行命令、
+记录 `RUN_ID`、监控运行并收集报告；不会要求你手工创建、修改或复原 feature flags。
 
 ## 当前本地拓扑
 
@@ -150,17 +153,25 @@ kubectl --context docker-desktop -n featbit port-forward service/featbit-els 301
 升级 chart 或复用其他版本创建的 PostgreSQL PVC 前，先检查 FeatBit chart 对应版本的 migration
 说明；Helm 不会替你执行数据库迁移。
 
-## 4. 准备 probe flags
+## 4. 自动管理 probe flags
 
-在同一个 FeatBit project/environment 中创建以下 String flags：
+不要手工创建或修改 probe flags。`run-test.ps1` 会在创建 TestRun 前调用
+`prepare-probe-flags.ps1`，在 controller 配置指向的 environment 中按 Profile 精确重建它们：
 
-| Profile | 必需的 flag keys | 连接数 | 建连速率 | Stabilization | Hold |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `smoke` | `loadtest-sync-probe-01` | 10 | 1/s | 10s | 180s |
-| `baseline` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-10` | 1,000 | 10/s | 30s | 600s |
-| `growth` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-20` | 5,000 | 50/s | 30s | 600s |
+| Profile | 自动创建的 flag keys | 数量 | 连接数 | 建连速率 | Stabilization | Hold |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `smoke` | `loadtest-sync-probe-01` | 1 | 10 | 1/s | 10s | 180s |
+| `baseline` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-10` | 10 | 1,000 | 10/s | 30s | 600s |
+| `growth` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-20` | 20 | 5,000 | 50/s | 30s | 600s |
 
-每个 flag 必须满足：
+每轮 provision 会：
+
+1. 确认当前没有 Pending/Running 的负载测试；
+2. 从 `featbit-k6-controller` 和 `featbit-k6-controller-secret` 读取 environment ID 与 OpenAPI token；
+3. archive 并删除该 environment 中所有 active/archived 的 `loadtest-sync-probe-NN`；
+4. 创建该 Profile 所需的准确数量，并验证每个 flag 的完整配置和初始值。
+
+自动创建的每个 flag 都是：
 
 | 配置 | 要求 |
 | --- | --- |
@@ -168,10 +179,11 @@ kubectl --context docker-desktop -n featbit port-forward service/featbit-els 301
 | Status | Enabled、未归档 |
 | Variation values | `baseline`、`rev-001`、`rev-002` |
 | Target users / targeting rules | 均为空 |
+| Default Rule | 100% `baseline` |
 
-当前 Default Rule 可以是任意 rollout；controller 会在测试开始前把它改为 100% `baseline`。
-controller 不会创建缺失的 flag，也不会覆盖已有 targeting rules。先只准备
-`loadtest-sync-probe-01` 并跑通 smoke，再准备其余 flags。
+`loadtest-sync-probe-NN` 是这套测试的保留 key，会在每轮开始前被删除并重建；不要把业务配置、
+targeting rules 或人工数据放在这些 flags 上。从 growth 切回 baseline 或 smoke 时，多余 flags 也会
+自动删除，因此下一轮始终从该 Profile 的准确数量和 `baseline` 状态开始。
 
 ## 5. 配置 streaming target
 
@@ -198,6 +210,9 @@ Remove-Variable serverSecret
 controller 使用 FeatBit OpenAPI token。先列出 token 可访问的 project/environment，再选择与
 Server SDK secret **完全相同的 environment**。如果二者不一致，controller 会修改一个环境，
 WebSocket 却连接另一个环境，测试必然收不到 revision。
+
+Token 必须允许读取、列举、创建、archive、删除 feature flags，以及更新 targeting；权限不足时
+`run-test.ps1` 会在创建 TestRun 前失败，不会带着不完整的 flags 开始负载。
 
 ```powershell
 $accessToken = Read-Host "FeatBit OpenAPI access token" -AsSecureString
@@ -232,7 +247,25 @@ controller 的默认时序：
 
 ## 7. 运行测试
 
-先运行 smoke：
+每条命令都会先 provision flags，再打印 `RUN_ID`、创建唯一 TestRun、跟踪 runner 日志、等待 Job
+结束并复制报告。同一时间只允许一个 Pending/Running 测试；provision 失败时不会创建 TestRun。
+
+每轮自动执行：
+
+1. `run-test.ps1` 删除并重建该 Profile 的准确数量，全部初始化为 `baseline`；
+2. k6 `setup()` 再确认所有 probe flags 为 `baseline`；
+3. 在任何 WebSocket 建立前执行不计入正式 revision 的
+   `baseline -> rev-001 -> baseline` 预热，每步默认等待 2 秒；
+4. 建立 Profile 指定数量的 WebSocket；
+5. measured hold 开始 5 秒后写入 `rev-001`；
+6. 完成所有 `rev-001` 写入后等待 30 秒，再写入 `rev-002`；
+7. 测试自然结束后，`teardown()` 恢复 `baseline`。
+
+不需要在 UI 中操作 flag。每个 flag 每轮产生两次预热变更、两次正式变更，并在结束时恢复。
+
+### Smoke
+
+先用 smoke 验证凭据、REST CRUD、ELS streaming、自动变更和结果收集链路：
 
 ```powershell
 .\k8s-infra\scripts\run-test.ps1 `
@@ -240,33 +273,50 @@ controller 的默认时序：
   -Note "local ELS, automatic warm-up"
 ```
 
-脚本会打印 `RUN_ID`，创建唯一 TestRun，跟踪 runner 日志，等待 Job 结束，然后自动复制报告。
-同一时间只允许一个 Pending/Running 测试。
+该轮自动创建 1 个 flag、建立 10 条连接，10 秒 ramp-up 后稳定 10 秒；measured hold 为
+`T+20s` 至 `T+200s`。预期 `controller_warmup_updates == 2`、
+`controller_revision_updates == 2`。
 
-每轮自动执行：
+### Baseline
 
-1. `setup()` 恢复所有 probe flags 为 `baseline`；
-2. 在任何 WebSocket 建立前执行不计入正式 revision 的
-   `baseline -> rev-001 -> baseline` 预热，每步默认等待 2 秒；
-3. 建立 profile 指定数量的 WebSocket；
-4. measured hold 开始 5 秒后写入 `rev-001`；
-5. 完成所有 `rev-001` 写入后等待 30 秒，再写入 `rev-002`；
-6. 测试自然结束后，`teardown()` 恢复 `baseline`。
-
-不需要在 UI 中手动修改 flag。每个 flag 每轮会产生两次预热变更、两次正式变更，并在需要时
-产生 baseline 恢复记录。
-
-smoke 通过且对应 flags 已准备完整后，再运行：
+smoke 自然结束并通过后运行 baseline：
 
 ```powershell
-.\k8s-infra\scripts\run-test.ps1 -Profile baseline -Note "baseline configuration A"
-.\k8s-infra\scripts\run-test.ps1 -Profile growth -Note "growth configuration A"
+.\k8s-infra\scripts\run-test.ps1 `
+  -Profile baseline `
+  -Note "baseline configuration A"
 ```
 
-只提交 TestRun、不在当前终端等待：
+该轮会先把 smoke 的 flag 集合重建为 10 个 canonical flags，再建立 1,000 条连接。ramp-up 为
+100 秒，随后稳定 30 秒；measured hold 为 `T+130s` 至 `T+730s`，drain 在 `T+740s` 结束。
+预期 `controller_warmup_updates == 20`、`controller_revision_updates == 20`。
+
+### Growth
+
+baseline 自然结束并通过后运行 growth：
 
 ```powershell
-.\k8s-infra\scripts\run-test.ps1 -Profile smoke -Note "async smoke" -NoWait
+.\k8s-infra\scripts\run-test.ps1 `
+  -Profile growth `
+  -Note "growth configuration A"
+```
+
+该轮会重建为 20 个 canonical flags，再建立 5,000 条连接。ramp-up 同样为 100 秒，随后稳定
+30 秒；measured hold 为 `T+130s` 至 `T+730s`，drain 在 `T+740s` 结束。预期
+`controller_warmup_updates == 40`、`controller_revision_updates == 40`。
+
+运行 growth 前确认 Docker Desktop 为 5,000 条 WebSocket 和三个 ELS Pod 留有足够 CPU/内存；
+资源不足导致的运行属于本地环境瓶颈，不能直接当作 FeatBit 容量结论。
+
+### 后台提交
+
+任意 Profile 都可以用 `-NoWait` 只提交 TestRun。例如：
+
+```powershell
+.\k8s-infra\scripts\run-test.ps1 `
+  -Profile baseline `
+  -Note "async baseline" `
+  -NoWait
 ```
 
 使用 `-NoWait` 时请保存打印出的 `RUN_ID`，待 Job 结束后再运行结果收集脚本。
@@ -362,7 +412,8 @@ kubectl --context docker-desktop -n featbit-loadtest delete testrun "featbit-$ru
 ```
 
 被中止或删除的运行是 Invalid，不能作为性能失败。强制删除可能跳过 `teardown()`；下一轮
-`setup()` 会再次恢复 baseline，但不要假设中断后 flag 已立即复原。
+`run-test.ps1` 会先删除并重建该 Profile 的 flags，再由 `setup()` 确认 baseline；但不要假设
+中断后、下一轮开始前 flag 已立即复原。
 
 自然结束并确认报告已复制后，也可用同一个 delete 命令清理该轮 Job/Pod。共享 PVC 和本地
 `results/` 不会被删除。
@@ -371,7 +422,8 @@ kubectl --context docker-desktop -n featbit-loadtest delete testrun "featbit-$ru
 
 - **脚本拒绝当前 context**：执行 `kubectl config use-context docker-desktop`。
 - **缺少 `featbit-k6-target` 或 controller 配置**：重新执行第 5、6 节的配置脚本。
-- **缺少 probe flag 或 flag 有 targeting rules**：按第 4 节修正；controller 不会自动创建或清空 rules。
+- **flag provision 在 TestRun 创建前失败**：确认本地 API `http://localhost:30000` 可访问，且
+  OpenAPI token 对目标 environment 有读取、创建、archive、删除和 targeting 更新权限。
 - **出现 `received pong for unknown ping ID`**：如果 `ping_sent == pong_received`、
   `heartbeat_timeout == 0` 且 `websocket_error == 0`，这是 k6 的 pong 跟踪警告，不影响本轮结论。
 - **报告尚不可用**：确认 runner Job 已结束，再执行 `collect-results.ps1`。
@@ -383,3 +435,5 @@ kubectl --context docker-desktop -n featbit-loadtest delete testrun "featbit-$ru
 - `probe_sync_latency_ms` 使用 FeatBit payload 的 `updatedAt` 作为起点。当前单节点时钟适合本地
   演练；跨节点测试必须先保证节点时钟同步。
 - 这些脚本是 local-only，硬编码并强制检查 `docker-desktop`；不要直接用于 AKS。
+
+[返回顶部](#docker-desktop-kubernetes-本地负载测试)
