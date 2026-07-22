@@ -1,8 +1,16 @@
 import { sleep } from "k6";
 import exec from "k6/execution";
+import http from "k6/http";
 import { Counter, Rate, Trend } from "k6/metrics";
 import { WebSocket } from "k6/websockets";
 
+import {
+  buildFeatureFlagUrl,
+  buildTargetingUpdate,
+  getDeterministicServedValue,
+  normalizeApiBaseUrl,
+  validateControllerFlag,
+} from "./lib/api-controller.js";
 import { generateConnectionToken } from "./lib/connection-token.js";
 import {
   extractProbeSnapshot,
@@ -38,6 +46,10 @@ function booleanEnv(name, fallback = false) {
 
 const FEATBIT_STREAMING_URL = String(__ENV.FEATBIT_STREAMING_URL ?? "").trim();
 const FEATBIT_SERVER_SECRET = String(__ENV.FEATBIT_SERVER_SECRET ?? "").trim();
+const FEATBIT_API_URL = String(__ENV.FEATBIT_API_URL ?? "").trim();
+const FEATBIT_API_ACCESS_TOKEN = String(__ENV.FEATBIT_API_ACCESS_TOKEN ?? "").trim();
+const FEATBIT_ENVIRONMENT_ID = String(__ENV.FEATBIT_ENVIRONMENT_ID ?? "").trim();
+const RUN_ID = String(__ENV.RUN_ID ?? "local-run").trim();
 const PROBE_FLAG_KEYS = parseProbeFlagKeys(
   __ENV.PROBE_FLAG_KEYS ?? __ENV.PROBE_FLAG_KEY ?? "loadtest-sync-probe",
 );
@@ -66,6 +78,16 @@ const SYNC_P99_MS = integerEnv("SYNC_P99_MS", 1_000);
 const CLOCK_SKEW_TOLERANCE_MS = integerEnv("CLOCK_SKEW_TOLERANCE_MS", 1_000, 0);
 const DEBUG = booleanEnv("DEBUG");
 const STRICT_PATCH_DELIVERY = booleanEnv("STRICT_PATCH_DELIVERY");
+const AUTO_CONTROL_REVISIONS = booleanEnv("AUTO_CONTROL_REVISIONS");
+const CONTROLLER_START_DELAY_SECONDS = integerEnv("CONTROLLER_START_DELAY_SECONDS", 5, 0);
+const CONTROLLER_REVISION_INTERVAL_SECONDS = integerEnv(
+  "CONTROLLER_REVISION_INTERVAL_SECONDS",
+  30,
+);
+const CONTROLLER_FINAL_SETTLE_SECONDS = integerEnv(
+  "CONTROLLER_FINAL_SETTLE_SECONDS",
+  30,
+);
 
 const RAMP_UP_MS = RAMP_UP_SECONDS * 1_000;
 const STABILIZATION_MS = STABILIZATION_SECONDS * 1_000;
@@ -75,6 +97,7 @@ const PING_INTERVAL_MS = PING_INTERVAL_SECONDS * 1_000;
 const INITIAL_SYNC_TIMEOUT_MS = INITIAL_SYNC_TIMEOUT_SECONDS * 1_000;
 const HEARTBEAT_TIMEOUT_MS = HEARTBEAT_TIMEOUT_SECONDS * 1_000;
 const FINALIZE_GRACE_MS = 1_000;
+const REQUIRED_PROBE_VALUES = [PROBE_INITIAL_VALUE, ...EXPECTED_REVISIONS];
 
 const FULL_DATA_SYNC_MESSAGE = JSON.stringify({
   messageType: "data-sync",
@@ -100,6 +123,8 @@ const revisionSequenceError = new Counter("revision_sequence_error");
 const unexpectedRevision = new Counter("unexpected_revision");
 const clockSkewDetected = new Counter("clock_skew_detected");
 const probeRevisionReceived = new Counter("probe_revision_received");
+const controllerApiError = new Counter("controller_api_error");
+const controllerRevisionUpdates = new Counter("controller_revision_updates");
 
 const connectionOpenSuccess = new Rate("connection_open_success");
 const initialSyncSuccess = new Rate("initial_sync_success");
@@ -108,11 +133,13 @@ const connectionSurvived = new Rate("connection_survived");
 const initialProbeValueSuccess = new Rate("initial_probe_value_success");
 const probeRevisionCoverage = new Rate("probe_revision_coverage");
 const finalAppliedRevisionSuccess = new Rate("final_applied_revision_success");
+const controllerUpdateSuccess = new Rate("controller_update_success");
 
 const connectionOpenLatency = new Trend("connection_open_latency_ms", true);
 const initialSyncLatency = new Trend("initial_sync_latency_ms", true);
 const probeSyncLatency = new Trend("probe_sync_latency_ms", true);
 const applicationPongLatency = new Trend("application_pong_latency_ms", true);
+const controllerApiLatency = new Trend("controller_api_latency_ms", true);
 
 const ZERO_VALUE_COUNTERS = [
   unexpectedClose,
@@ -159,21 +186,44 @@ for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
   thresholds[`probe_revision_coverage{revision_index:${index + 1}}`] = ["rate==1"];
 }
 
-export const options = {
-  scenarios: {
-    featbit_server_streaming: {
-      executor: "ramping-vus",
-      startVUs: 0,
-      stages: [
-        { duration: `${RAMP_UP_SECONDS}s`, target: MAX_CONNECTIONS },
-        { duration: `${STABILIZATION_SECONDS}s`, target: MAX_CONNECTIONS },
-        { duration: `${HOLD_DURATION_SECONDS}s`, target: MAX_CONNECTIONS },
-        { duration: `${DRAIN_DURATION_SECONDS}s`, target: 0 },
-      ],
-      gracefulRampDown: `${DRAIN_DURATION_SECONDS + 5}s`,
-    },
+if (AUTO_CONTROL_REVISIONS) {
+  thresholds.controller_api_error = ["count==0"];
+  thresholds.controller_update_success = ["rate==1"];
+  thresholds.controller_revision_updates = [
+    `count==${PROBE_FLAG_KEYS.length * EXPECTED_REVISIONS.length}`,
+  ];
+}
+
+const scenarios = {
+  featbit_server_streaming: {
+    executor: "ramping-vus",
+    startVUs: 0,
+    stages: [
+      { duration: `${RAMP_UP_SECONDS}s`, target: MAX_CONNECTIONS },
+      { duration: `${STABILIZATION_SECONDS}s`, target: MAX_CONNECTIONS },
+      { duration: `${HOLD_DURATION_SECONDS}s`, target: MAX_CONNECTIONS },
+      { duration: `${DRAIN_DURATION_SECONDS}s`, target: 0 },
+    ],
+    gracefulRampDown: `${DRAIN_DURATION_SECONDS + 5}s`,
   },
+};
+
+if (AUTO_CONTROL_REVISIONS) {
+  scenarios.featbit_flag_controller = {
+    executor: "shared-iterations",
+    vus: 1,
+    iterations: 1,
+    startTime: `${RAMP_UP_SECONDS + STABILIZATION_SECONDS + CONTROLLER_START_DELAY_SECONDS}s`,
+    maxDuration: `${CONTROLLER_REVISION_INTERVAL_SECONDS * EXPECTED_REVISIONS.length + 120}s`,
+    exec: "controlProbeRevisions",
+  };
+}
+
+export const options = {
+  scenarios,
   thresholds,
+  setupTimeout: "5m",
+  teardownTimeout: "5m",
   // Every tokenized URL is unique and the token contains the server secret envelope.
   // Do not emit the default `url` system tag: it leaks credentials and creates 10k series.
   systemTags: ["scenario", "name"],
@@ -255,6 +305,133 @@ function recordProbePatch(snapshot, probeState) {
   probeRevisionReceived.add(1, revisionTags);
 }
 
+function controllerRequest(method, url, body, operation, tags = {}) {
+  const response = http.request(method, url, body === undefined ? null : JSON.stringify(body), {
+    headers: {
+      Accept: "application/json",
+      Authorization: FEATBIT_API_ACCESS_TOKEN,
+      "Content-Type": "application/json",
+    },
+    redirects: 0,
+    timeout: "15s",
+    tags: { name: operation, ...tags },
+  });
+
+  controllerApiLatency.add(response.timings.duration, { operation, ...tags });
+
+  let payload;
+  try {
+    payload = response.json();
+  } catch (error) {
+    const requestError = new Error(
+      `${operation} returned HTTP ${response.status} with a non-JSON response`,
+    );
+    requestError.status = response.status;
+    throw requestError;
+  }
+
+  if (response.status !== 200 || payload?.success !== true) {
+    const apiErrors = Array.isArray(payload?.errors)
+      ? payload.errors.map((entry) => (typeof entry === "string" ? entry : JSON.stringify(entry)))
+      : [];
+    const detail = apiErrors.length > 0 ? `: ${apiErrors.join("; ")}` : "";
+    const requestError = new Error(`${operation} failed with HTTP ${response.status}${detail}`);
+    requestError.status = response.status;
+    throw requestError;
+  }
+
+  return payload.data;
+}
+
+function getControllerFlag(flagKey) {
+  const flagUrl = buildFeatureFlagUrl(FEATBIT_API_URL, FEATBIT_ENVIRONMENT_ID, flagKey);
+  const flag = controllerRequest("GET", flagUrl, undefined, "controller_get_flag", {
+    flag_key: flagKey,
+  });
+  validateControllerFlag(flag, flagKey, REQUIRED_PROBE_VALUES);
+  return flag;
+}
+
+function isRevisionConflict(error) {
+  return (
+    error?.status === 409 ||
+    error?.status === 412 ||
+    (error?.status === 400 && String(error.message).toLowerCase().includes("revision"))
+  );
+}
+
+function setProbeFlagValue(flagKey, targetValue, phase, recordExpectedRevision) {
+  const metricTags = {
+    flag_key: flagKey,
+    phase,
+    revision: targetValue,
+  };
+
+  try {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const flag = getControllerFlag(flagKey);
+      if (getDeterministicServedValue(flag) === targetValue) {
+        if (recordExpectedRevision) {
+          throw new Error(
+            `feature flag '${flagKey}' already served '${targetValue}' before the controller update`,
+          );
+        }
+        controllerUpdateSuccess.add(1, { ...metricTags, changed: "false" });
+        return;
+      }
+
+      const payload = buildTargetingUpdate(
+        flag,
+        flagKey,
+        REQUIRED_PROBE_VALUES,
+        targetValue,
+        `Load test ${RUN_ID}: ${phase}`,
+      );
+      const flagUrl = buildFeatureFlagUrl(FEATBIT_API_URL, FEATBIT_ENVIRONMENT_ID, flagKey);
+
+      try {
+        controllerRequest(
+          "PUT",
+          `${flagUrl}/targeting`,
+          payload,
+          "controller_update_targeting",
+          metricTags,
+        );
+      } catch (error) {
+        if (attempt < 3 && isRevisionConflict(error)) {
+          sleep(attempt * 0.25);
+          continue;
+        }
+        throw error;
+      }
+
+      const verifiedFlag = getControllerFlag(flagKey);
+      const servedValue = getDeterministicServedValue(verifiedFlag);
+      if (servedValue !== targetValue) {
+        throw new Error(
+          `feature flag '${flagKey}' served '${servedValue}' after updating it to '${targetValue}'`,
+        );
+      }
+
+      controllerUpdateSuccess.add(1, { ...metricTags, changed: "true" });
+      if (recordExpectedRevision) {
+        controllerRevisionUpdates.add(1, metricTags);
+      }
+      return;
+    }
+  } catch (error) {
+    controllerUpdateSuccess.add(0, metricTags);
+    controllerApiError.add(1, metricTags);
+    throw error;
+  }
+}
+
+function setAllProbeFlags(targetValue, phase, recordExpectedRevision = false) {
+  for (const flagKey of PROBE_FLAG_KEYS) {
+    setProbeFlagValue(flagKey, targetValue, phase, recordExpectedRevision);
+  }
+}
+
 export function setup() {
   const errors = [];
 
@@ -285,9 +462,36 @@ export function setup() {
   if (INITIAL_SYNC_TIMEOUT_SECONDS > STABILIZATION_SECONDS && STABILIZATION_SECONDS > 0) {
     errors.push("STABILIZATION_SECONDS must be at least INITIAL_SYNC_TIMEOUT_SECONDS");
   }
+  if (AUTO_CONTROL_REVISIONS) {
+    try {
+      normalizeApiBaseUrl(FEATBIT_API_URL);
+    } catch (error) {
+      errors.push(error.message);
+    }
+    if (!FEATBIT_API_ACCESS_TOKEN) {
+      errors.push("FEATBIT_API_ACCESS_TOKEN is required when AUTO_CONTROL_REVISIONS=true");
+    }
+    if (!FEATBIT_ENVIRONMENT_ID) {
+      errors.push("FEATBIT_ENVIRONMENT_ID is required when AUTO_CONTROL_REVISIONS=true");
+    }
+
+    const finalRevisionOffset =
+      CONTROLLER_START_DELAY_SECONDS +
+      CONTROLLER_REVISION_INTERVAL_SECONDS * (EXPECTED_REVISIONS.length - 1);
+    if (finalRevisionOffset + CONTROLLER_FINAL_SETTLE_SECONDS > HOLD_DURATION_SECONDS) {
+      errors.push(
+        "The controller revision schedule and final settle period must fit inside HOLD_DURATION_SECONDS",
+      );
+    }
+  }
 
   if (errors.length > 0) {
     throw new Error(`Invalid test configuration:\n- ${errors.join("\n- ")}`);
+  }
+
+  if (AUTO_CONTROL_REVISIONS) {
+    console.log(`[controller] restoring ${PROBE_FLAG_KEYS.length} probe flag(s) to baseline`);
+    setAllProbeFlags(PROBE_INITIAL_VALUE, "pre-run baseline");
   }
 
   const holdStartsAt = RAMP_UP_SECONDS + STABILIZATION_SECONDS;
@@ -298,10 +502,48 @@ export function setup() {
       `- measured hold: T+${holdStartsAt}s through T+${holdStartsAt + HOLD_DURATION_SECONDS}s`,
       `- probe flags (${PROBE_FLAG_KEYS.length}): ${PROBE_FLAG_KEYS.join(", ")}`,
       `- initial value for every probe flag: ${PROBE_INITIAL_VALUE}`,
-      `- during the measured hold, update every probe flag in this order: ${EXPECTED_REVISIONS.join(" -> ")}`,
+      AUTO_CONTROL_REVISIONS
+        ? `- REST controller: automatic ${PROBE_INITIAL_VALUE} -> ${EXPECTED_REVISIONS.join(" -> ")}`
+        : `- during the measured hold, update every probe flag in this order: ${EXPECTED_REVISIONS.join(" -> ")}`,
       `- duplicate/stale patch delivery: ${STRICT_PATCH_DELIVERY ? "strict (recorded and fails the run)" : "ignored (SDK-compatible)"}`,
     ].join("\n"),
   );
+
+  return { autoController: AUTO_CONTROL_REVISIONS };
+}
+
+export function controlProbeRevisions(data) {
+  if (!data?.autoController) {
+    return;
+  }
+
+  controllerApiError.add(0);
+  try {
+    for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
+      const revision = EXPECTED_REVISIONS[index];
+      console.log(
+        `[controller] applying ${revision} to ${PROBE_FLAG_KEYS.length} probe flag(s)`,
+      );
+      setAllProbeFlags(revision, `measured revision ${index + 1}`, true);
+
+      if (index < EXPECTED_REVISIONS.length - 1) {
+        sleep(CONTROLLER_REVISION_INTERVAL_SECONDS);
+      }
+    }
+  } catch (error) {
+    const message = `FeatBit REST controller failed: ${error.message}`;
+    console.error(`[controller] ${message}`);
+    exec.test.abort(message);
+  }
+}
+
+export function teardown(data) {
+  if (!data?.autoController) {
+    return;
+  }
+
+  console.log(`[controller] restoring ${PROBE_FLAG_KEYS.length} probe flag(s) to baseline`);
+  setAllProbeFlags(PROBE_INITIAL_VALUE, "post-run baseline");
 }
 
 export default function () {

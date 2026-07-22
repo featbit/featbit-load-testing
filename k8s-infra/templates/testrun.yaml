@@ -1,0 +1,80 @@
+apiVersion: k6.io/v1alpha1
+kind: TestRun
+metadata:
+  name: __TEST_RUN_NAME__
+  namespace: featbit-loadtest
+  labels:
+    app.kubernetes.io/name: featbit-k6
+    app.kubernetes.io/part-of: featbit-load-testing
+    loadtest.featbit.io/run-id: __RUN_ID__
+    loadtest.featbit.io/profile: __PROFILE__
+spec:
+  parallelism: 1
+  script:
+    localFile: /tests/k6/server-streaming.js
+  arguments: >-
+    --tag run_id=__RUN_ID__
+    --tag profile=__PROFILE__
+    --summary-export=/results/__RUN_ID__-summary.json
+  runner:
+    image: featbit-k6-local:2.1.0
+    imagePullPolicy: Never
+    metadata:
+      labels:
+        app.kubernetes.io/name: featbit-k6-runner
+        loadtest.featbit.io/run-id: __RUN_ID__
+        loadtest.featbit.io/profile: __PROFILE__
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: "4"
+        memory: 4Gi
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 12345
+      runAsGroup: 12345
+      fsGroup: 12345
+      fsGroupChangePolicy: OnRootMismatch
+    envFrom:
+      - configMapRef:
+          name: featbit-k6-target
+      - secretRef:
+          name: featbit-k6-secret
+      - configMapRef:
+          name: featbit-k6-controller
+      - secretRef:
+          name: featbit-k6-controller-secret
+    env:
+      - name: RUN_ID
+        value: __RUN_ID__
+      - name: PROBE_FLAG_KEYS
+        value: __PROBE_FLAG_KEYS__
+      - name: MAX_CONNECTIONS
+        value: "__MAX_CONNECTIONS__"
+      - name: CONNECTIONS_PER_SECOND
+        value: "__CONNECTIONS_PER_SECOND__"
+      - name: STABILIZATION_SECONDS
+        value: "__STABILIZATION_SECONDS__"
+      - name: INITIAL_SYNC_TIMEOUT_SECONDS
+        value: "__INITIAL_SYNC_TIMEOUT_SECONDS__"
+      - name: HOLD_DURATION_SECONDS
+        value: "__HOLD_DURATION_SECONDS__"
+      - name: DRAIN_DURATION_SECONDS
+        value: "__DRAIN_DURATION_SECONDS__"
+      - name: K6_WEB_DASHBOARD
+        value: "true"
+      - name: K6_WEB_DASHBOARD_HOST
+        value: "0.0.0.0"
+      - name: K6_WEB_DASHBOARD_PORT
+        value: "5665"
+      - name: K6_WEB_DASHBOARD_EXPORT
+        value: /results/__RUN_ID__-report.html
+    volumeMounts:
+      - name: results
+        mountPath: /results
+    volumes:
+      - name: results
+        persistentVolumeClaim:
+          claimName: featbit-k6-results

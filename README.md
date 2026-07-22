@@ -4,6 +4,9 @@ Use k6 to open independent FeatBit Server SDK-compatible WebSocket connections a
 
 Use k6 2.1.0 on both the local workstation and the remote load generator.
 
+For the Docker Desktop Kubernetes rehearsal, including repeatable `TestRun` execution and
+HTML/JSON result collection, see [`k8s-infra/README.md`](k8s-infra/README.md).
+
 ## Test profiles
 
 `Ramp rate` means new WebSocket connections per second.
@@ -112,7 +115,15 @@ k6 run --summary-export .\results\growth-summary.json .\k6\server-streaming.js
 
 Measured hold: `T+130s` through `T+730s`.
 
-## 4. Change the flags during the measured hold
+## 4. Control the flags during the measured hold
+
+Docker Desktop Kubernetes runs use the REST controller documented in
+[`k8s-infra/README.md`](k8s-infra/README.md). With `AUTO_CONTROL_REVISIONS=true`, the
+same k6 runner restores every probe flag to `baseline` in `setup()`, applies
+`rev-001` and then `rev-002` during the measured hold, and restores `baseline` in
+`teardown()`. No manual flag changes are required.
+
+For a direct k6 run without the REST controller, use the following manual process.
 
 Before starting, confirm that every probe flag serves `baseline` to 100%.
 
@@ -136,6 +147,10 @@ A missing revision, an out-of-order update, or a final value other than `rev-002
 - Stop changing flags at any time by making no further saves; the WebSockets remain connected.
 - Stop k6 at any time with `Ctrl+C` in its PowerShell window.
 - k6 2.1.0 cannot pause and resume the same run. Do not suspend the process because its heartbeat timers will also stop and invalidate the result.
+
+With the REST controller enabled, a natural completion restores `baseline` in
+`teardown()`. Force-killing the runner can skip teardown; the next run still restores
+`baseline` in `setup()`, but do not assume an interrupted run cleaned up immediately.
 
 An interrupted run is incomplete; do not treat its threshold failures as a load-test result.
 
@@ -166,4 +181,4 @@ delivery-quality failures into one misleading percentage.
 
 ## What this tests
 
-Each k6 VU opens one independent WebSocket and follows the FeatBit .NET Server SDK streaming protocol and version-application behavior for connection, full synchronization, patch updates, and application heartbeat. The script validates every key in `PROBE_FLAG_KEYS` on every connection. It does not call the FeatBit API or start real .NET processes.
+Each k6 VU opens one independent WebSocket and follows the FeatBit .NET Server SDK streaming protocol and version-application behavior for connection, full synchronization, patch updates, and application heartbeat. The script validates every key in `PROBE_FLAG_KEYS` on every connection. When `AUTO_CONTROL_REVISIONS=true`, a separate k6 scenario calls the FeatBit REST API to control the probe flags; otherwise the flags remain manual. The test does not start real .NET processes.

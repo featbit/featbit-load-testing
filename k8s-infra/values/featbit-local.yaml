@@ -1,0 +1,128 @@
+# Local Docker Desktop Kubernetes values for FeatBit ELS load-test rehearsal.
+#
+# This file is intentionally HTTP-only. Browser access uses NodePort, while k6
+# uses the same ELS Service through its in-cluster ClusterIP DNS name.
+
+architecture:
+  # Standard uses Redis for caching and message delivery between FeatBit instances.
+  tier: standard
+  database: postgres
+
+apiExternalUrl: "http://localhost:30000"
+evaluationServerExternalUrl: "http://localhost:30100"
+
+ui:
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 8081
+    nodePort: 30081
+  ingress:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+api:
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 5000
+    nodePort: 30000
+  ingress:
+    enabled: false
+  env:
+    - name: Jwt__Algorithm
+      value: HS256
+    - name: Jwt__Key
+      valueFrom:
+        secretKeyRef:
+          name: featbit-jwt-secret
+          key: jwt-key
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+els:
+  enabled: true
+  replicaCount: 3
+  image:
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 5100
+    nodePort: 30100
+  ingress:
+    enabled: false
+  autoscaling:
+    enabled: false
+  rateLimiting:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# DAS is not on the Server SDK streaming path used by this test.
+das:
+  enabled: false
+
+postgresql:
+  enabled: true
+  nameOverride: featbit-postgresql
+  architecture: standalone
+  auth:
+    username: featbit
+    password: featbit
+    database: featbit
+    existingSecret: ""
+  primary:
+    persistence:
+      enabled: true
+      size: 2Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+redis:
+  enabled: true
+  nameOverride: featbit-redis
+  architecture: standalone
+  auth:
+    enabled: false
+    password: ""
+    existingSecret: ""
+    existingSecretPasswordKey: ""
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+mongodb:
+  enabled: false
