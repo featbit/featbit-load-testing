@@ -19,6 +19,8 @@ param(
 
     [string] $ClusterApiUrl = "http://featbit-api.featbit.svc.cluster.local:5000",
 
+    [string] $KubeContext = "docker-desktop",
+
     [ValidateRange(0, 60)]
     [int] $WarmupSettleSeconds = 2,
 
@@ -72,11 +74,28 @@ function Invoke-FeatBitApi {
             -TimeoutSec 15
     }
     catch {
-        $statusCode = $_.Exception.Response.StatusCode.value__
-        if ($null -eq $statusCode) {
-            throw "FeatBit API request failed: $($_.Exception.Message)"
+        $caughtException = $_.Exception
+        $statusCode = $null
+        $responseProperty = $caughtException.PSObject.Properties["Response"]
+        if ($null -ne $responseProperty -and $null -ne $responseProperty.Value) {
+            $statusCodeProperty = $responseProperty.Value.PSObject.Properties["StatusCode"]
+            if ($null -ne $statusCodeProperty) {
+                $statusCode = [int]$statusCodeProperty.Value
+            }
         }
-        throw "FeatBit API request failed with HTTP $statusCode. Check the access token and API URL."
+
+        if ($null -ne $statusCode) {
+            throw "FeatBit API request failed with HTTP $statusCode. Check the access token and API URL."
+        }
+
+        $connectionHint = ""
+        if (([Uri]$Uri).IsLoopback) {
+            $connectionHint = (
+                " Keep 'kubectl port-forward service/featbit-api 5000:5000' " +
+                "running in a second terminal."
+            )
+        }
+        throw "FeatBit API request to '$Uri' failed: $($caughtException.Message).$connectionHint"
     }
 
     if ($response.success -ne $true) {
@@ -87,8 +106,13 @@ function Invoke-FeatBitApi {
     return @($response.data)
 }
 
-Assert-LocalKubernetesContext
-Assert-KubernetesObjectExists -Kind "namespace" -Name $script:LoadTestNamespace -Namespace "default"
+$targetContext = $KubeContext.Trim()
+Assert-KubernetesContext -KubeContext $targetContext
+Assert-KubernetesObjectExists `
+    -Kind "namespace" `
+    -Name $script:LoadTestNamespace `
+    -Namespace "default" `
+    -KubeContext $targetContext
 
 $normalizedApiUrl = Normalize-HttpUrl -Value $ApiUrl -Name "ApiUrl"
 $normalizedClusterApiUrl = Normalize-HttpUrl -Value $ClusterApiUrl -Name "ClusterApiUrl"
@@ -157,7 +181,7 @@ try {
     $resolvedEnvironmentId = [string]$environment.id
 
     $configMapYaml = (& kubectl `
-        --context $script:LocalKubernetesContext `
+        --context $targetContext `
         -n $script:LoadTestNamespace `
         create configmap featbit-k6-controller `
         --from-literal="AUTO_CONTROL_REVISIONS=true" `
@@ -174,7 +198,7 @@ try {
     }
 
     $configMapYaml | & kubectl `
-        --context $script:LocalKubernetesContext `
+        --context $targetContext `
         -n $script:LoadTestNamespace `
         apply -f -
     if ($LASTEXITCODE -ne 0) {
@@ -200,7 +224,7 @@ try {
     } | ConvertTo-Json -Depth 5
 
     $secretManifest | & kubectl `
-        --context $script:LocalKubernetesContext `
+        --context $targetContext `
         -n $script:LoadTestNamespace `
         apply -f -
     if ($LASTEXITCODE -ne 0) {
@@ -209,6 +233,7 @@ try {
 
     Write-Host ""
     Write-Host "REST controller configured." -ForegroundColor Green
+    Write-Host "Kubernetes context: $targetContext"
     Write-Host "Project: $($project.name) [$($project.key)]"
     Write-Host "Environment: $($environment.name) [$($environment.key)]"
     Write-Host "Environment ID: $resolvedEnvironmentId"

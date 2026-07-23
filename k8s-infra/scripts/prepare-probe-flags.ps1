@@ -4,7 +4,9 @@ param(
     [ValidateRange(1, 20)]
     [int] $ProbeFlagCount,
 
-    [string] $ApiUrl = "http://localhost:30000"
+    [string] $ApiUrl = "http://localhost:30000",
+
+    [string] $KubeContext = "docker-desktop"
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,6 +27,26 @@ function Normalize-ApiUrl {
     }
 
     return $normalized
+}
+
+function Assert-NoActiveLoadTest {
+    $podJson = (& kubectl `
+        --context $targetContext `
+        -n $script:LoadTestNamespace `
+        get pods `
+        -l "loadtest.featbit.io/run-id" `
+        -o json | Out-String)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to query existing load-test Pods."
+    }
+
+    $activePods = @(($podJson | ConvertFrom-Json).items | Where-Object {
+        $_.status.phase -in @("Pending", "Running", "Unknown")
+    })
+    if ($activePods.Count -gt 0) {
+        $names = ($activePods | ForEach-Object { $_.metadata.name }) -join ", "
+        throw "Refusing to change probe flags while a load test is active: $names"
+    }
 }
 
 function Invoke-FeatBitRequest {
@@ -57,16 +79,28 @@ function Invoke-FeatBitRequest {
         $response = Invoke-RestMethod @parameters
     }
     catch {
-        $statusCode = if ($null -eq $_.Exception.Response) {
-            $null
+        $caughtException = $_.Exception
+        $statusCode = $null
+        $responseProperty = $caughtException.PSObject.Properties["Response"]
+        if ($null -ne $responseProperty -and $null -ne $responseProperty.Value) {
+            $statusCodeProperty = $responseProperty.Value.PSObject.Properties["StatusCode"]
+            if ($null -ne $statusCodeProperty) {
+                $statusCode = [int]$statusCodeProperty.Value
+            }
         }
-        else {
-            [int]$_.Exception.Response.StatusCode
+
+        if ($null -ne $statusCode) {
+            throw "FeatBit API request failed with HTTP $statusCode."
         }
-        if ($null -eq $statusCode) {
-            throw "FeatBit API request failed: $($_.Exception.Message)"
+
+        $connectionHint = ""
+        if (([Uri]$Uri).IsLoopback) {
+            $connectionHint = (
+                " Keep 'kubectl port-forward service/featbit-api 5000:5000' " +
+                "running in a second terminal."
+            )
         }
-        throw "FeatBit API request failed with HTTP $statusCode."
+        throw "FeatBit API request to '$Uri' failed: $($caughtException.Message).$connectionHint"
     }
 
     if ($response.success -ne $true) {
@@ -217,13 +251,21 @@ function Assert-CanonicalProbeFlag {
     }
 }
 
-Assert-LocalKubernetesContext
-Assert-KubernetesObjectExists -Kind "configmap" -Name "featbit-k6-controller"
-Assert-KubernetesObjectExists -Kind "secret" -Name "featbit-k6-controller-secret"
+$targetContext = $KubeContext.Trim()
+Assert-KubernetesContext -KubeContext $targetContext
+Assert-KubernetesObjectExists `
+    -Kind "configmap" `
+    -Name "featbit-k6-controller" `
+    -KubeContext $targetContext
+Assert-KubernetesObjectExists `
+    -Kind "secret" `
+    -Name "featbit-k6-controller-secret" `
+    -KubeContext $targetContext
+Assert-NoActiveLoadTest
 
 $normalizedApiUrl = Normalize-ApiUrl -Value $ApiUrl
 $environmentId = (& kubectl `
-    --context $script:LocalKubernetesContext `
+    --context $targetContext `
     -n $script:LoadTestNamespace `
     get configmap featbit-k6-controller `
     -o jsonpath='{.data.FEATBIT_ENVIRONMENT_ID}' | Out-String).Trim()
@@ -232,7 +274,7 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($environmentId)) {
 }
 
 $encodedAccessToken = (& kubectl `
-    --context $script:LocalKubernetesContext `
+    --context $targetContext `
     -n $script:LoadTestNamespace `
     get secret featbit-k6-controller-secret `
     -o jsonpath='{.data.FEATBIT_API_ACCESS_TOKEN}' | Out-String).Trim()
@@ -309,6 +351,7 @@ try {
     }
 
     Write-Host "Prepared $ProbeFlagCount canonical probe flag(s) in baseline state."
+    Write-Host "Kubernetes context: $targetContext"
 }
 finally {
     $accessToken = $null

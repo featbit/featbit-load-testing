@@ -1,0 +1,202 @@
+# AKS dev/test values for FeatBit chart 0.9.13 / app 5.4.4.
+#
+# "internal" in this file name means bundled data dependencies, not private access.
+# This profile intentionally deploys the chart's bundled PostgreSQL and Redis.
+# It is suitable for the disposable load-test cluster, not for production.
+# Secret values are created separately and must never be committed here.
+# UI, API, and ELS use temporary public HTTP LoadBalancers open to the Internet.
+
+architecture:
+  tier: standard
+  database: postgres
+
+# The chart discovers the public API and ELS LoadBalancer IPs before UI starts.
+apiExternalUrl: ""
+evaluationServerExternalUrl: ""
+autoDiscovery: true
+
+# Chart 0.9.13 references a kubectl tag that is no longer published under
+# bitnami/kubectl. The identical pinned tag remains available in the
+# Bitnami legacy repository and is required by the UI auto-discovery init container.
+kubectl:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/kubectl
+    tag: 1.26.6-debian-11-r31
+    pullPolicy: IfNotPresent
+
+ui:
+  enabled: true
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    port: 8081
+  ingress:
+    enabled: false
+  autoscaling:
+    enabled: false
+  nodeSelector:
+    workload: featbit
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: featbit
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+api:
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    port: 5000
+  ingress:
+    enabled: false
+  autoscaling:
+    enabled: false
+  nodeSelector:
+    workload: featbit
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: featbit
+      effect: NoSchedule
+  env:
+    - name: Jwt__Algorithm
+      value: HS256
+    - name: Jwt__Key
+      valueFrom:
+        secretKeyRef:
+          name: featbit-jwt-secret
+          key: jwt-key
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+els:
+  enabled: true
+  replicaCount: 3
+  image:
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    port: 5100
+    annotations:
+      service.beta.kubernetes.io/azure-load-balancer-tcp-idle-timeout: "30"
+  ingress:
+    enabled: false
+  autoscaling:
+    enabled: false
+  rateLimiting:
+    enabled: false
+  nodeSelector:
+    workload: featbit
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: featbit
+      effect: NoSchedule
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: featbit
+                app.kubernetes.io/component: els
+  resources:
+    requests:
+      cpu: "1"
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# DAS is outside the Server SDK streaming path measured by this repository.
+das:
+  enabled: false
+
+postgresql:
+  enabled: true
+  nameOverride: featbit-postgresql
+  architecture: standalone
+  auth:
+    username: featbit
+    database: featbit
+    existingSecret: featbit-postgresql-auth
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+  primary:
+    nodeSelector:
+      workload: featbit
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: featbit
+        effect: NoSchedule
+    persistence:
+      enabled: true
+      storageClass: managed-csi-premium
+      size: 32Gi
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+      limits:
+        # Intentionally no CPU limit: PostgreSQL must not hit an artificial
+        # CFS quota before the fixed-size ELS tier reaches its boundary.
+        memory: 4Gi
+
+redis:
+  enabled: true
+  nameOverride: featbit-redis
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: featbit-redis-auth
+    existingSecretPasswordKey: redis-password
+  master:
+    nodeSelector:
+      workload: featbit
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: featbit
+        effect: NoSchedule
+    persistence:
+      enabled: true
+      storageClass: managed-csi-premium
+      size: 8Gi
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+      limits:
+        # Redis is mostly single-threaded, but omitting the CPU limit also
+        # leaves room for I/O and background threads without CFS throttling.
+        memory: 2Gi
+
+mongodb:
+  enabled: false
+
+kafka:
+  enabled: false
+
+clickhouse:
+  enabled: false

@@ -4,14 +4,21 @@ param(
     [string] $StreamingUrl,
 
     [Parameter(Mandatory)]
-    [Security.SecureString] $ServerSecret
+    [Security.SecureString] $ServerSecret,
+
+    [string] $KubeContext = "docker-desktop"
 )
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "common.ps1")
 
-Assert-LocalKubernetesContext
-Assert-KubernetesObjectExists -Kind "namespace" -Name $script:LoadTestNamespace -Namespace "default"
+$targetContext = $KubeContext.Trim()
+Assert-KubernetesContext -KubeContext $targetContext
+Assert-KubernetesObjectExists `
+    -Kind "namespace" `
+    -Name $script:LoadTestNamespace `
+    -Namespace "default" `
+    -KubeContext $targetContext
 
 $normalizedStreamingUrl = $StreamingUrl.Trim().TrimEnd("/")
 if ($normalizedStreamingUrl -notmatch "^wss?://") {
@@ -29,7 +36,7 @@ try {
     }
 
     $configMapYaml = (& kubectl `
-        --context $script:LocalKubernetesContext `
+        --context $targetContext `
         -n $script:LoadTestNamespace `
         create configmap featbit-k6-target `
         --from-literal="FEATBIT_STREAMING_URL=$normalizedStreamingUrl" `
@@ -43,7 +50,7 @@ try {
     }
 
     $configMapYaml | & kubectl `
-        --context $script:LocalKubernetesContext `
+        --context $targetContext `
         -n $script:LoadTestNamespace `
         apply -f -
     if ($LASTEXITCODE -ne 0) {
@@ -51,7 +58,7 @@ try {
     }
 
     $secretYaml = (& kubectl `
-        --context $script:LocalKubernetesContext `
+        --context $targetContext `
         -n $script:LoadTestNamespace `
         create secret generic featbit-k6-secret `
         --from-literal="FEATBIT_SERVER_SECRET=$plainServerSecret" `
@@ -62,7 +69,7 @@ try {
     }
 
     $secretYaml | & kubectl `
-        --context $script:LocalKubernetesContext `
+        --context $targetContext `
         -n $script:LoadTestNamespace `
         apply -f -
     if ($LASTEXITCODE -ne 0) {
@@ -78,6 +85,6 @@ finally {
 }
 
 Write-Host ""
+Write-Host "Kubernetes context: $targetContext"
 Write-Host "Target configured: $normalizedStreamingUrl"
 Write-Host "Next: run-test.ps1 -Profile smoke"
-

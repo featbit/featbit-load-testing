@@ -16,6 +16,23 @@ spec:
   arguments: >-
     --tag run_id=__RUN_ID__
     --tag profile=__PROFILE__
+  initializer:
+    image: __RUNNER_IMAGE__
+    imagePullPolicy: IfNotPresent
+    nodeSelector:
+      workload: loadgen
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: loadgen
+        effect: NoSchedule
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
   starter:
     nodeSelector:
       workload: loadgen
@@ -68,6 +85,12 @@ spec:
       - secretRef:
           name: featbit-k6-controller-secret
     env:
+      # Keep all measured traffic inside AKS. Explicit env entries take
+      # precedence over duplicate keys imported through envFrom.
+      - name: FEATBIT_STREAMING_URL
+        value: ws://featbit-els.featbit.svc.cluster.local:5100
+      - name: FEATBIT_API_URL
+        value: http://featbit-api.featbit.svc.cluster.local:5000
       - name: POD_NAME
         valueFrom:
           fieldRef:

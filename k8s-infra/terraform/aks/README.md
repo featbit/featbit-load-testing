@@ -16,8 +16,8 @@ main resource group and must not already exist.
 
 It intentionally does not install Kubernetes/Helm resources in the same Terraform apply. HashiCorp
 recommends managing a newly created cluster and in-cluster resources in separate apply operations.
-After this stack is ready, follow the parent [AKS runbook](../../README-AKS.md) to install the k6
-Operator and FeatBit.
+After this stack is ready, use this guide to deploy the temporary FeatBit profile and follow the
+parent [AKS runbook](../../README-AKS.md) to install the k6 Operator and run the test.
 
 ## Default topology
 
@@ -72,6 +72,353 @@ The `featbit-devtest` resource group's own metadata location can remain `westus3
 "eastasia"` independently places AKS and ACR in East Asia. To create a dedicated main group instead,
 set `create_resource_group = true` and choose an unused `resource_group_name`.
 
+## Deploy FeatBit with bundled PostgreSQL and Redis
+
+This repository includes a dev/test profile that deploys FeatBit chart `0.9.13` / app `5.4.4`
+together with its bundled PostgreSQL and Redis subcharts:
+
+- PostgreSQL chart `14.0.5`, using PostgreSQL image `16.2.0-debian-11-r1`;
+- Redis chart `18.12.1`, using Redis image `7.2.4-debian-11-r5`;
+- one UI Pod, one API Pod, and three ELS Pods;
+- PostgreSQL on `1 CPU / 2Gi` request, `4Gi` memory limit, and a `32Gi`
+  `managed-csi-premium` disk;
+- Redis on `1 CPU / 1Gi` request, `2Gi` memory limit, and an `8Gi`
+  `managed-csi-premium` disk;
+- public UI, API, and ELS LoadBalancers open to Internet clients;
+- the UI auto-discovery init container pinned to the chart's Kubernetes `1.26.6` client image in
+  `bitnamilegacy/kubectl`, because that exact chart tag is unavailable from `bitnami/kubectl`;
+- DAS, MongoDB, Kafka, and ingress disabled.
+
+This is a disposable load-test configuration. FeatBit production deployments must use managed
+external PostgreSQL and Redis. The values file schedules every application and data Pod onto the
+tainted `workload=featbit` pool; omitting its node selector or toleration leaves Pods Pending.
+Each ELS replica has a fixed `1 CPU` request and limit, HPA is disabled, and the replica count stays
+at three so CPU saturation is visible instead of being hidden by scheduling or scaling changes.
+This measures the capacity of a `3 × 1 vCPU` ELS profile, not an unlimited product ceiling. The
+request reserves schedulable capacity, while the limit applies a cgroup quota; it does not promise
+an exclusive physical core. Correlate latency with ELS CPU and CFS-throttling metrics.
+PostgreSQL and Redis deliberately have no CPU limit: each reserves one core but may use spare target
+node CPU, avoiding an artificial dependency-side CFS ceiling before ELS reaches its fixed limit.
+This is headroom, not proof that they are out of the critical path; their metrics remain run
+validity guardrails.
+
+### Connect to the intended AKS context
+
+The Azure Portal link does not change the local kubeconfig. Fetch the new context, select it
+explicitly, and stop if the guard does not pass:
+
+```powershell
+$resourceGroup = terraform output -raw resource_group_name
+$aksName = terraform output -raw aks_name
+$aksContext = $aksName
+
+az aks get-credentials `
+  --resource-group $resourceGroup `
+  --name $aksName `
+  --overwrite-existing
+
+kubectl config use-context $aksContext
+$currentContext = (kubectl config current-context).Trim()
+if ($currentContext -ne $aksContext) {
+    throw "Expected context '$aksContext', found '$currentContext'."
+}
+
+kubectl --context $aksContext get nodes `
+  -L agentpool,workload `
+  -o wide
+
+kubectl --context $aksContext get storageclass managed-csi-premium -o name
+```
+
+Expected pools are `system` (`1` node), `featbit` (`2` nodes), and `loadgen` (`2` nodes), and the
+Premium Azure Disk storage class must exist. Continue to pass `--context` to `kubectl` and
+`--kube-context` to Helm even after changing the default.
+
+### Create the namespace and credentials
+
+The checked-in
+[`featbit-aks-internal.yaml`](../../values/featbit-aks-internal.yaml) contains only Secret
+references. Generate per-cluster credentials and store them in Kubernetes; do not put their values
+in Git, Terraform variables, Helm values, or command output:
+
+```powershell
+kubectl create namespace featbit --dry-run=client -o yaml |
+  kubectl --context $aksContext apply -f -
+
+$pgPassword = [Convert]::ToHexString(
+    [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+).ToLowerInvariant()
+$redisPassword = [Convert]::ToHexString(
+    [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+).ToLowerInvariant()
+$jwtKey = [Convert]::ToHexString(
+    [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+).ToLowerInvariant()
+
+kubectl --context $aksContext -n featbit create secret generic featbit-postgresql-auth `
+  --from-literal=password=$pgPassword `
+  --from-literal=postgres-password=$pgPassword `
+  --dry-run=client -o yaml |
+  kubectl --context $aksContext apply -f -
+
+kubectl --context $aksContext -n featbit create secret generic featbit-redis-auth `
+  --from-literal=redis-password=$redisPassword `
+  --dry-run=client -o yaml |
+  kubectl --context $aksContext apply -f -
+
+kubectl --context $aksContext -n featbit create secret generic featbit-jwt-secret `
+  --from-literal=jwt-key=$jwtKey `
+  --dry-run=client -o yaml |
+  kubectl --context $aksContext apply -f -
+
+Remove-Variable pgPassword, redisPassword, jwtKey
+
+kubectl --context $aksContext -n featbit get secret `
+  featbit-postgresql-auth `
+  featbit-redis-auth `
+  featbit-jwt-secret `
+  -o name
+```
+
+The PostgreSQL Secret has both `postgres-password` and `password` because the bundled chart uses
+separate administrator and application-user keys. The Redis chart reads `redis-password`.
+
+### Render and install the released chart
+
+Use the released repository artifact for a reproducible test. Use the local chart path only when
+intentionally testing unreleased chart changes.
+
+This install profile assumes a fresh release. If `helm list --namespace featbit` or
+`kubectl --context $aksContext -n featbit get pvc` shows an earlier deployment, stop and review it
+before upgrading: StatefulSet volume-claim templates cannot switch an existing PVC to a different
+storage class.
+
+```powershell
+$aksContext = (terraform output -raw aks_name).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($aksContext)) {
+    throw "Cannot read aks_name from this Terraform stack."
+}
+
+$availableContexts = @(kubectl config get-contexts -o name)
+if ($availableContexts -notcontains $aksContext) {
+    $credentialsCommand = (terraform output -raw get_credentials_command).Trim()
+    throw "kubectl context '$aksContext' is missing. Run: $credentialsCommand"
+}
+
+$featbitValues = (Resolve-Path ..\..\values\featbit-aks-internal.yaml).Path
+
+$versionJson = kubectl --context $aksContext version -o json
+if ($LASTEXITCODE -ne 0) {
+    throw "Cannot reach Kubernetes through context '$aksContext'."
+}
+$kubeVersion = (($versionJson | ConvertFrom-Json).serverVersion.gitVersion -replace '^v', '')
+if ($kubeVersion -notmatch '^\d+\.\d+\.\d+(?:[-+].*)?$') {
+    throw "Kubernetes returned invalid server version '$kubeVersion'."
+}
+
+$requiredSecrets = @(
+    "featbit-postgresql-auth",
+    "featbit-redis-auth",
+    "featbit-jwt-secret"
+)
+kubectl --context $aksContext -n featbit get secret @requiredSecrets -o name |
+  Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "One or more required FeatBit Secrets are missing. Run the credential block above first."
+}
+
+helm repo add featbit https://featbit.github.io/featbit-charts/ --force-update
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to configure the FeatBit Helm repository."
+}
+helm repo update featbit
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to update the FeatBit Helm repository."
+}
+helm show chart featbit/featbit --version 0.9.13
+if ($LASTEXITCODE -ne 0) {
+    throw "FeatBit chart 0.9.13 is unavailable."
+}
+
+# Render first. This does not change the cluster.
+helm template featbit featbit/featbit `
+  --version 0.9.13 `
+  --namespace featbit `
+  --kube-version $kubeVersion `
+  --values $featbitValues |
+  Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "FeatBit Helm rendering failed; the cluster was not changed."
+}
+
+helm upgrade --install featbit featbit/featbit `
+  --version 0.9.13 `
+  --namespace featbit `
+  --create-namespace `
+  --kube-context $aksContext `
+  --values $featbitValues `
+  --atomic `
+  --wait `
+  --timeout 20m
+if ($LASTEXITCODE -ne 0) {
+    throw "FeatBit Helm installation failed and --atomic requested rollback."
+}
+```
+
+The values intentionally create public Azure LoadBalancers without
+`azure-load-balancer-internal` or a source-IP allowlist. UI, API, and ELS therefore receive public
+external IPs reachable from any Internet source. This is only acceptable for the short-lived
+dev/test cluster requested here: these endpoints use HTTP, and a fresh bundled database contains a
+known bootstrap login. Change that password immediately, use only disposable environment-scoped
+tokens, rotate them afterward, and destroy the stack promptly. For a durable or production
+deployment, use HTTPS Ingress, Azure Front Door, or another TLS terminator and restore network
+access controls before exposing FeatBit.
+
+The released chart already packages its dependencies; `helm dependency build` is unnecessary. To
+deploy the local working tree instead, first run
+`helm dependency build C:\Code\featbit\featbit-charts\charts\featbit`, then replace
+`featbit/featbit --version 0.9.13` with that chart directory in the install command.
+
+### Verify placement and readiness
+
+```powershell
+helm status featbit `
+  --namespace featbit `
+  --kube-context $aksContext
+
+kubectl --context $aksContext -n featbit wait `
+  --for=condition=Ready pod `
+  --all `
+  --timeout=20m
+
+kubectl --context $aksContext -n featbit get `
+  deployments,statefulsets,pods,services,pvc `
+  -o wide
+
+kubectl --context $aksContext -n featbit get service `
+  featbit-ui featbit-api featbit-els `
+  -o 'custom-columns=NAME:.metadata.name,TYPE:.spec.type,EXTERNAL-IP:.status.loadBalancer.ingress[0].ip,PORT:.spec.ports[0].port'
+
+kubectl --context $aksContext -n featbit get deployment featbit-els `
+  -o 'custom-columns=REPLICAS:.spec.replicas,CPU-REQUEST:.spec.template.spec.containers[0].resources.requests.cpu,CPU-LIMIT:.spec.template.spec.containers[0].resources.limits.cpu,MEMORY-LIMIT:.spec.template.spec.containers[0].resources.limits.memory'
+
+kubectl --context $aksContext -n featbit get statefulset `
+  -l app.kubernetes.io/instance=featbit `
+  -o 'custom-columns=NAME:.metadata.name,CPU-REQUEST:.spec.template.spec.containers[0].resources.requests.cpu,CPU-LIMIT:.spec.template.spec.containers[0].resources.limits.cpu,MEMORY-REQUEST:.spec.template.spec.containers[0].resources.requests.memory,MEMORY-LIMIT:.spec.template.spec.containers[0].resources.limits.memory'
+
+kubectl --context $aksContext -n featbit get pvc `
+  -o 'custom-columns=NAME:.metadata.name,STORAGECLASS:.spec.storageClassName,SIZE:.spec.resources.requests.storage,STATUS:.status.phase'
+
+foreach ($serviceName in @("featbit-ui", "featbit-api", "featbit-els")) {
+    $service = (
+        kubectl --context $aksContext -n featbit get service $serviceName -o json |
+        ConvertFrom-Json
+    )
+    if ($service.spec.type -ne "LoadBalancer") {
+        throw "$serviceName is '$($service.spec.type)', expected a public LoadBalancer."
+    }
+    if ($service.metadata.annotations.'service.beta.kubernetes.io/azure-load-balancer-internal' -eq "true") {
+        throw "$serviceName is configured as an internal Azure LoadBalancer."
+    }
+    if ($service.metadata.annotations.'service.beta.kubernetes.io/azure-allowed-ip-ranges') {
+        throw "$serviceName still has a source-IP allowlist."
+    }
+    if (-not $service.status.loadBalancer.ingress[0].ip) {
+        throw "$serviceName does not have a public external IP."
+    }
+}
+```
+
+Confirm:
+
+- UI and API each have one Ready Pod;
+- ELS has `3/3` Ready Pods, distributed across the two `featbit` nodes as `2 + 1`;
+- ELS reports `3`, `1`, `1`, and `1Gi` for replicas, CPU request, CPU limit, and memory limit;
+- PostgreSQL and Redis StatefulSets are Ready and have Bound PVCs;
+- PostgreSQL reports `1`, `<none>`, `2Gi`, and `4Gi`; Redis reports `1`, `<none>`, `1Gi`, and
+  `2Gi` for CPU request, CPU limit, memory request, and memory limit;
+- their PVCs use `managed-csi-premium`, with `32Gi` for PostgreSQL and `8Gi` for Redis;
+- no FeatBit, PostgreSQL, or Redis Pod is on `system` or `loadgen`;
+- UI, API, and ELS are public `LoadBalancer` Services with assigned external IPs and no source-IP
+  allowlist;
+- PostgreSQL and Redis remain `ClusterIP` and have no external IP.
+
+For a fresh bundled database, the chart's PostgreSQL init ConfigMap creates the schema. Chart
+`0.9.13` introduces no schema migration. For an upgrade or reused PVC, review every intervening
+file in the chart repository's `migration/` directory before running Helm because migrations are
+not automatic.
+
+The PVC storage class is immutable. If this release already has Bound PVCs from the earlier
+configuration, a Helm upgrade does not move them to Premium disks. Export anything needed, then
+recreate the disposable release/PVCs or use a new namespace; never delete a PVC that contains data
+you intend to keep.
+
+Treat the run as dependency-limited, not as an ELS capacity result, if any of these correlate with
+the propagation-latency spike:
+
+- PostgreSQL or Redis consumes sustained CPU beyond its reserved core while target-node CPU is
+  saturated;
+- either container approaches its memory limit, restarts, or is OOM-killed;
+- PostgreSQL shows lock waits, slow commits, disk queueing, or elevated WAL/fsync latency;
+- Redis shows command-latency spikes, rejected connections, blocked clients, or evictions.
+
+### Verify flags and create the test access token
+
+Finish all manual verification and credential setup before k6 warm-up. Do not use the UI or public
+API during the measured window because that adds uncontrolled traffic to API, PostgreSQL, and ELS.
+
+Read the three public endpoints:
+
+```powershell
+$uiIp = (
+    kubectl --context $aksContext -n featbit get service featbit-ui `
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+).Trim()
+$apiIp = (
+    kubectl --context $aksContext -n featbit get service featbit-api `
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+).Trim()
+$elsIp = (
+    kubectl --context $aksContext -n featbit get service featbit-els `
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+).Trim()
+
+"UI:  http://${uiIp}:8081"
+"API: http://${apiIp}:5000"
+"ELS: http://${elsIp}:5100"
+```
+
+Open the UI address from any Internet-connected workstation. A fresh bundled database uses
+`test@featbit.com` / `123456`; immediately change that password at `/organization/profile`. Verify
+the test environment and a feature flag manually before generating automation credentials.
+
+Create a service token under **Integrations > Access Tokens**:
+
+1. Name it for the run, for example `k6-growth-controller`.
+2. Limit it to the load-test project/environment.
+3. Grant feature-flag read/list, create, archive, delete, and targeting-update permissions. Granting
+   all feature-flag actions is acceptable only when the token is restricted to this disposable
+   environment.
+4. Copy the `api-...` value when it is first shown; FeatBit masks it after leaving the page. Never
+   paste it into a values file, Terraform state, Git, a report, or chat.
+
+Service-token permissions are fixed after creation. If the scope is wrong, delete the token and
+create a new least-privilege one instead of broadening the deployment around it.
+
+Apply the AKS load-test base manifest and use the context-aware credential helpers in the parent
+[AKS runbook](../../README-AKS.md#6-配置测试凭据与-controller). They prompt for both the OpenAPI
+token and the environment's Server SDK secret as `SecureString`, resolve the selected environment,
+and create the four ConfigMap/Secret objects without putting credential values in Git or native
+process arguments. Always pass `-KubeContext aks-featbit-load-testing`; omitting it deliberately
+targets the local `docker-desktop` default.
+
+In-cluster k6 continues to use
+`http://featbit-api.featbit.svc.cluster.local:5000` and
+`ws://featbit-els.featbit.svc.cluster.local:5100`; load-test traffic does not traverse the public
+LoadBalancers. These addresses are explicit in the AKS TestRun runner environment and override
+duplicate `envFrom` values, so the public endpoints remain browser-only. Rotate the service token
+and destroy the cluster after evidence collection.
+
 ## Build the k6 image
 
 ```powershell
@@ -104,7 +451,8 @@ separately before applying.
 ## Destroy after a test
 
 First copy JSON/HTML reports and monitoring evidence outside AKS and its ephemeral ACR. Then review
-the exact destroy plan and remove the stack:
+the exact destroy plan and remove the stack. The bundled PostgreSQL/Redis PVC data is also deleted
+with AKS, so export anything that must survive before continuing:
 
 ```powershell
 $resourceGroup = terraform output -raw resource_group_name
@@ -137,3 +485,9 @@ successful destroy. If `create_resource_group = true`, both outputs should inste
 - [AKS resource-group behavior](https://learn.microsoft.com/azure/aks/faq#why-are-two-resource-groups-created-with-aks)
 - [Azure Retail Prices API](https://learn.microsoft.com/rest/api/cost-management/retail-prices/azure-retail-prices)
 - [AKS baseline architecture](https://learn.microsoft.com/azure/architecture/reference-architectures/containers/aks/baseline-aks)
+- [AKS public Standard LoadBalancer and allowed IP ranges](https://learn.microsoft.com/azure/aks/configure-load-balancer-standard#restrict-inbound-traffic-to-specific-ip-ranges)
+- [AKS Azure Disk storage classes](https://learn.microsoft.com/azure/aks/create-volume-azure-disk)
+- [FeatBit Helm chart](https://github.com/featbit/featbit-charts)
+- [FeatBit API access tokens](https://docs.featbit.co/integrations/api-access-tokens)
+- [Bitnami PostgreSQL chart](https://github.com/bitnami/charts/tree/main/bitnami/postgresql)
+- [Bitnami Redis chart](https://github.com/bitnami/charts/tree/main/bitnami/redis)
