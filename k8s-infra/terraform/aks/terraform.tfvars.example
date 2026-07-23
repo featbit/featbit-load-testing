@@ -1,0 +1,32 @@
+subscription_id = "00000000-0000-0000-0000-000000000000"
+location        = "eastasia"
+name_prefix     = "featbit-growth"
+
+# Reuse the existing shared container. Terraform destroys only resources it creates
+# inside this group and preserves the group itself.
+resource_group_name      = "featbit-devtest"
+create_resource_group    = false
+node_resource_group_name = "featbit-devtest-nodes"
+
+# Keep this empty unless all selected VM sizes support the zones in this region.
+availability_zones = []
+
+# Restrict a public API endpoint to your control host where possible, for example:
+# api_server_authorized_ip_ranges = ["203.0.113.10/32"]
+api_server_authorized_ip_ranges = []
+
+# Cost-oriented, ephemeral default topology:
+# - one small system node;
+# - two target nodes shared by UI, API, and three ELS Pods;
+# - two isolated loadgen nodes, one runner per node.
+system_node_vm_size  = "Standard_D2ds_v5"
+system_node_count    = 1
+target_node_vm_size  = "Standard_D4ds_v5"
+target_node_count    = 2
+loadgen_node_vm_size = "Standard_D4ds_v5"
+loadgen_node_count   = 2
+
+tags = {
+  owner      = "<team-or-user>"
+  expires-at = "<yyyy-mm-dd>"
+}

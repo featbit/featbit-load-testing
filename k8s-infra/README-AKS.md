@@ -1,0 +1,730 @@
+<a id="top"></a>
+
+# AKS 负载测试迁移与运行指南
+
+本文说明如何把本仓库的 FeatBit WebSocket 负载测试从 Docker Desktop Kubernetes
+迁移到 Azure Kubernetes Service（AKS）。目标是让 FeatBit、k6 Operator 和实际负载都在
+Azure 中运行，并通过资源隔离和监控判断传播延迟来自负载生成器还是 FeatBit 服务端。
+
+- 测试行为、Profile 和通过条件见[根 README](../README.md)。
+- 单机流程演练见[Docker Desktop 指南](README.md)。
+
+> 本文是 AKS 架构与运行手册，不表示当前 local-only PowerShell 脚本已经支持 AKS。
+> 不要删除或绕过脚本中的 `docker-desktop` context 保护；先完成本文的“仓库适配清单”。
+
+## 导航
+
+- [方案、资源与测试不变量](#结论先行)
+- [准备 AKS、ACR、Operator 与存储](#1-前置条件)
+- [部署 FeatBit 与管理 secrets](#6-部署-featbit)
+- [适配仓库并执行测试](#8-适配-testrun)
+- [传播延迟归因](#12-如何判断传播延迟瓶颈)
+- [故障处理与官方参考](#常见问题)
+
+## 结论先行
+
+AKS growth 使用独立的分布式基线，保持总连接数和 FeatBit Pod 配置不变，同时消除本地
+负载机瓶颈：
+
+- `parallelism: 2`、`separate: true`，两个 runner 分别产生约 2,500 条 WebSocket 连接；
+- ELS 仍为 3 个副本，每个 `1 CPU / 512Mi` limit；
+- 两个 runner 分别独占一个 `Standard_D4ds_v5` loadgen 节点，每个使用
+  `3 CPU / 4Gi request`、`8Gi memory limit`，不设置 CPU limit；
+- FeatBit 和 runner 不共享节点；测量期间关闭自动扩缩容并停止部署；
+- 使用 ACR 中按 Git SHA 构建的不可变镜像，并记录最终 image digest；
+- 使用 Azure Files CSI 的 `ReadWriteMany` PVC 保存 JSON/HTML 结果；
+- 至少采集 runner、ELS、API、Redis、PostgreSQL 和节点级指标。
+
+本地 growth 首次运行中单 runner 内存峰值约为 `5.33 GiB`，同时 CPU 接近现有 `4 CPU`
+上限。把负载均分到两个节点后，预期每个 runner 约 2,500 VU；专用节点上不设置 CPU limit，
+避免 CFS throttling 人为抬高 `probe_sync_latency_ms`。
+
+## 支持边界
+
+| 仓库内容 | AKS 可用性 | 迁移动作 |
+| --- | --- | --- |
+| `k6/server-streaming.js` 与 `k6/lib/` | 已支持两个 runner | runner 1 独占 controller，连接阈值按执行段计算 |
+| `k8s-infra/Dockerfile.k6` | 可复用 | 用 Git SHA tag 构建并固定 digest |
+| `k8s-infra/templates/testrun-aks.yaml` | AKS 参考模板 | 两个 runner、分离调度、唯一报告路径和 RWX PVC |
+| `k8s-infra/manifests/local-base.yaml` | 不可直接用 | RWO PVC 改为 Azure Files CSI RWX，并增加调度 |
+| `k8s-infra/values/featbit-local.yaml` | 不可直接用 | 删除 NodePort/本地数据组件假设，新增节点隔离和云端依赖 |
+| `k8s-infra/scripts/*.ps1` | 当前仅本地 | 参数化 context、镜像、存储和 AKS 配置后才能复用 |
+| `k8s-infra/terraform/aks/` | 可用 | 创建/销毁临时 AKS、ACR 与 system/featbit/loadgen 节点池 |
+
+本地电脑或 Azure Cloud Shell 可以继续充当轻量控制端，执行 `az`、`helm` 和 `kubectl`；
+k6 的连接与测量负载必须在 AKS runner Pod 内产生。
+
+## 推荐拓扑
+
+```mermaid
+flowchart LR
+    Operator[操作者 / CI] -->|az, helm, kubectl| AKS
+    ACR[Azure Container Registry] -->|按 digest 拉取| Loadgen
+    KV[Azure Key Vault] -->|受管身份 / secret sync| AKS
+
+    subgraph AKS[AKS 集群]
+        System[system 节点池<br/>AKS 系统组件]
+        subgraph Target[featbit 节点池]
+            UI[FeatBit UI]
+            API[FeatBit API]
+            ELS[FeatBit ELS x3]
+        end
+        subgraph Loadgen[loadgen 节点池]
+            K6O[k6 Operator]
+            Runner[k6 runner x2]
+            Results[results-reader]
+        end
+        Files[(Azure Files RWX PVC)]
+    end
+
+    Runner -->|WebSocket| ELS
+    Runner -->|REST flag revisions| API
+    Runner --> Files
+    Results --> Files
+    API --> PG[(外部 PostgreSQL)]
+    API --> Redis[(外部 Redis)]
+    ELS --> Redis
+    AKS --> Monitor[Azure Monitor / Managed Prometheus]
+```
+
+最低可接受配置是同一 AKS 集群中的独立、带 taint 的 `featbit` 与 `loadgen` 用户节点池。
+需要形成正式容量结论时，优先使用独立的 target AKS 与 loadgen AKS；此时 ELS/API 必须通过
+Internal Load Balancer、私网对等和私有 DNS 暴露给 loadgen，不能继续使用同集群的
+`*.svc.cluster.local` 地址。
+
+## 起始资源模型
+
+下面是 growth 首次迁移的起点，不是最终容量承诺。VM SKU 是否可用、可用区支持情况和订阅
+quota 必须在目标 region 中先确认。
+
+| 节点池 | 示例 | 数量 | 用途 |
+| --- | --- | ---: | --- |
+| `system` | `Standard_D2ds_v5` | 1 | 临时集群的 CoreDNS、CSI 等系统组件 |
+| `featbit` | `Standard_D4ds_v5` | 2 | UI、API 与 3 个 ELS Pod；与 runner 隔离 |
+| `loadgen` | `Standard_D4ds_v5` | 2 | 两个 k6 runner，一节点一个 |
+
+首次对照跑保留以下工作负载配置：
+
+| 组件 | 副本 | Request | Limit | 说明 |
+| --- | ---: | --- | --- | --- |
+| ELS | 3 | `100m / 128Mi` | `1 CPU / 512Mi` | 与本地配置一致，HPA 关闭 |
+| API | 1 | `100m / 256Mi` | `500m / 1Gi` | 与本地配置一致 |
+| UI | 1 | `100m / 128Mi` | `500m / 512Mi` | 不在测量数据面上 |
+| growth runner | 2 | 每个 `3 CPU / 4Gi` | 每个仅 `8Gi` memory | 无 CPU limit，一节点一个 |
+
+三个 ELS 是 Pod 副本数，不代表必须购买三个 target 节点；两个 D4 节点会形成 `2 + 1` 的
+ELS 分布。只有测试契约要求一 Pod 一节点或三个 failure domain 时，才把
+`target_node_count` 改为 3。UI/API 的资源需求很小，它们共享 target pool，不单独购买节点。
+默认 target 与 loadgen 都是 2 个 D4，分别提供 8 vCPU/32 GiB 的节点总量。两个 runner 已把
+本地测得的约 4 CPU/5.33 GiB 峰值分散开；在指标证明 loadgen 节点仍饱和前，不需要先上四个
+runner 或 D16。
+
+### VM 价格快照
+
+以下为 2026-07-23 从 Azure Retail Prices API 查询的 Linux、按需、非 Spot 零售价，货币为
+USD；月价按 730 小时计算。实际账单受协议折扣、税费和 region 影响。
+
+| SKU | East Asia / 小时 | East Asia / 月 | Southeast Asia / 小时 | Southeast Asia / 月 |
+| --- | ---: | ---: | ---: | ---: |
+| `Standard_D2ds_v5` | $0.155 | $113.15 | $0.141 | $102.93 |
+| `Standard_D4ds_v5` | $0.310 | $226.30 | $0.282 | $205.86 |
+| `Standard_D8ds_v5` | $0.620 | $452.60 | $0.564 | $411.72 |
+| `Standard_D16ds_v5` | $1.240 | $905.20 | $1.128 | $823.44 |
+
+默认五节点拓扑的 VM 合计约为 East Asia `$1.395/小时`、Southeast Asia `$1.269/小时`；
+运行两小时约 `$2.79 / $2.54`。这不包含磁盘、Load Balancer/Public IP、ACR、Azure Files、
+监控、数据库、Redis、流量和 AKS Standard tier。Terraform 默认使用 AKS Free tier 和 ACR
+Basic。可随时运行
+[`get-vm-prices.ps1`](terraform/aks/get-vm-prices.ps1) 获取最新价格。
+
+## 测试不变量
+
+为保证本地与 AKS 结果可比较，每轮必须满足：
+
+1. 使用专门的 FeatBit project/environment 和 `loadtest-sync-probe-*` flags。
+2. Server SDK secret 与 OpenAPI access token 必须属于同一个 environment。
+3. 同一 environment 同一时间只有一个 Pending 或 Running 的 TestRun。
+4. AKS Profile 固定 `parallelism: 2`、`separate: true`，且 loadgen 节点数也是 2。
+5. 测量期间固定节点数、Pod 副本数和 HPA 状态，不执行升级、部署或节点维护。
+6. 所有节点与外部依赖保持时钟同步。该测试用 flag payload 的 `updatedAt` 计算传播延迟。
+7. 记录 AKS 版本、节点 SKU/数量、Helm chart 版本、镜像 digest 和所有资源配额。
+8. 让测试自然结束并收集报告；强制终止可能跳过 `teardown()` 的 baseline 恢复。
+
+分布式运行只有 runner 1 操作 flags。自动预热发生在 WebSocket 建连前：其 `setup()` 执行
+`baseline -> rev-001 -> baseline`，然后才开始建立连接。它能预热 API、Redis 和 ELS 的
+控制路径。两个 runner 都等待同一个 60 秒 setup barrier 后才开始 ramp；如果预热超过该窗口，
+该轮直接失败。结束时 runner 1 再等待 30 秒，让 runner 2 完成 drain，之后才恢复 baseline。
+这个过程不会预热 5,000 条连接上的 fan-out，报告中不要把它描述为满连接预热。
+
+## 1. 前置条件
+
+控制端需要：
+
+- Azure CLI、PowerShell 7、Git、Helm 3.7+ 和 `kubectl`；
+- 有权创建或使用 AKS、ACR、节点池、监控和 secret 方案的 Azure 身份；
+- 已确认目标 region 的 vCPU quota、VM SKU 和可用区；
+- 一个不会影响真实用户的 FeatBit 测试 environment；
+- PostgreSQL 和 Redis 的容量、网络与监控方案。
+
+先确认 subscription、region、SKU 和 quota：
+
+```powershell
+$subscriptionId = "<subscription-id>"
+$location = "<azure-region>"
+
+az account set --subscription $subscriptionId
+az aks get-versions --location $location --output table
+az vm list-skus --location $location --resource-type virtualMachines `
+  --query "[?name=='Standard_D2ds_v5' || name=='Standard_D4ds_v5'].{name:name,zones:locationInfo[0].zones,restrictions:restrictions}" `
+  --output table
+```
+
+不要把 Server SDK secret、OpenAPI token、JWT key 或数据库密码写入变量文件、Git、命令行参数、
+CI 日志或本文。任何曾粘贴到聊天或日志的 access token 都应视为已暴露并轮换。
+
+## 2. 创建或准备 AKS
+
+新建临时环境时使用仓库提供的
+[`terraform/aks/`](terraform/aks/README.md)。当前示例复用已有的 `featbit-devtest` resource
+group，在其中创建 AKS、ACR 和 ACR pull 权限，并创建 system/featbit/loadgen 节点池；
+`terraform destroy` 会删除这些测试资源，但保留 `featbit-devtest` 本身。
+
+AKS 强制使用第二个、独立的 node resource group 保存 VMSS、网络和磁盘，不能把它与主组
+合并。脚本将其固定为 `featbit-devtest-nodes`；该组必须事先不存在，并会在 AKS 删除时由
+Azure 自动删除。因此 Azure Portal 中会看到两个名称相邻的组，而不是无法识别的默认
+`MC_*` 名称。`featbit-devtest` 的元数据 location 是 `westus3` 不影响资源部署：
+Terraform 的 `location = "eastasia"` 仍会把 AKS 和 ACR 建在香港。
+
+```powershell
+Push-Location .\k8s-infra\terraform\aks
+Copy-Item terraform.tfvars.example terraform.tfvars
+# 示例已配置 featbit-devtest；编辑 subscription_id、owner 和 expires-at，不要写 secret。
+
+terraform init
+terraform validate
+terraform plan -out featbit-aks.tfplan
+terraform apply featbit-aks.tfplan
+
+$resourceGroup = terraform output -raw resource_group_name
+$aksName = terraform output -raw aks_name
+$acrName = terraform output -raw acr_name
+$credentialsCommand = terraform output -raw get_credentials_command
+Pop-Location
+
+Invoke-Expression $credentialsCommand
+
+$aksContext = (kubectl config current-context).Trim()
+kubectl --context $aksContext get nodes `
+  -L agentpool,workload,kubernetes.azure.com/mode `
+  -o wide
+```
+
+使用现有 AKS 时跳过 Terraform apply，但仍要创建同等的 taint/label 隔离节点池。确认只有
+目标 AKS context 后再继续。不要在 AKS context 下运行
+`k8s-infra/scripts/bootstrap.ps1`；它会并且应该拒绝执行。
+
+## 3. 构建并固定 runner 镜像
+
+使用 ACR Build 可避免本地 Docker 的 CPU/内存限制：
+
+```powershell
+$gitSha = (git rev-parse --short=12 HEAD).Trim()
+$acrLoginServer = (az acr show `
+  --resource-group $resourceGroup `
+  --name $acrName `
+  --query loginServer `
+  --output tsv).Trim()
+
+az acr build `
+  --registry $acrName `
+  --image "featbit-k6:$gitSha" `
+  --file k8s-infra/Dockerfile.k6 `
+  .
+
+$imageDigest = (az acr repository show `
+  --name $acrName `
+  --image "featbit-k6:$gitSha" `
+  --query digest `
+  --output tsv).Trim()
+
+$runnerImage = "$acrLoginServer/featbit-k6@$imageDigest"
+$runnerImage
+```
+
+TestRun 使用 `$runnerImage` 的 digest 形式和 `imagePullPolicy: IfNotPresent`。修改任何 `k6/`
+文件后都必须重新构建，不能复用旧 digest。
+
+## 4. 安装固定版本的 k6 Operator
+
+首次迁移沿用本地已验证的 chart `4.5.0` / app `1.5.0`。Operator 放到 loadgen 节点池，
+避免占用 FeatBit 节点：
+
+```powershell
+helm upgrade --install k6-operator k6-operator `
+  --repo https://grafana.github.io/helm-charts `
+  --version 4.5.0 `
+  --namespace k6-operator-system `
+  --create-namespace `
+  --set 'namespace.create=false' `
+  --set 'nodeSelector.workload=loadgen' `
+  --set 'tolerations[0].key=workload' `
+  --set 'tolerations[0].operator=Equal' `
+  --set 'tolerations[0].value=loadgen' `
+  --set 'tolerations[0].effect=NoSchedule' `
+  --kube-context $aksContext `
+  --wait `
+  --timeout 10m
+
+kubectl --context $aksContext get crd testruns.k6.io
+kubectl --context $aksContext -n k6-operator-system get pods -o wide
+```
+
+升级 Operator 是一次独立变更；不要在同一轮容量对比中同时升级 chart、k6 和 FeatBit。
+
+## 5. 配置结果存储
+
+本地 `ReadWriteOnce` PVC 在多节点 AKS 上可能导致 runner 与 `results-reader` 无法同时挂载。
+AKS 应使用 Azure Files CSI 的 `ReadWriteMany`：
+
+```powershell
+kubectl --context $aksContext get storageclass azurefile-csi
+kubectl --context $aksContext get csidriver file.csi.azure.com
+```
+
+AKS base manifest 至少应把本地 PVC 改为：
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: featbit-k6-results
+  namespace: featbit-loadtest
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: azurefile-csi
+  resources:
+    requests:
+      storage: 5Gi
+```
+
+`results-reader` 也应增加 `workload=loadgen` 的 `nodeSelector` 和对应 toleration。应用正式
+TestRun 前，用非 root 的测试 Pod 在 PVC 中创建、读取并删除一个临时文件，确认 UID/GID 和
+mount options 可写。报告文件很小，标准 `azurefile-csi` 通常足够；只有证据显示结果盘 I/O
+影响测试时才升级存储层级。
+
+## 6. 部署 FeatBit
+
+首次 AKS 对照跑固定 FeatBit chart `0.9.13` / app `5.4.4`。创建新的
+`featbit-aks.yaml`，不要复制本地 NodePort 和单机数据组件配置后直接上线。
+
+云端容量测试推荐：
+
+- `architecture.tier: standard`、`database: postgres`；
+- `postgresql.enabled: false`，连接独立 PostgreSQL；
+- `redis.enabled: false`，连接独立 Redis；
+- UI/API/ELS 使用 `ClusterIP`，管理入口通过受控的私有 ingress 或临时 port-forward；
+- UI/API/ELS 都选择 `workload=featbit` 并容忍同名 taint；
+- ELS 使用三个副本和 Pod anti-affinity，尽量分散到所有 target 节点；
+- ELS、API 的 HPA 在测量期间关闭；
+- DAS 与 MongoDB 继续关闭，因为不在本测试的 Server SDK streaming 路径上。
+
+关键 values 结构如下，所有 `<...>` 必须替换；secret 只引用名称和 key：
+
+```yaml
+architecture:
+  tier: standard
+  database: postgres
+
+apiExternalUrl: "https://<private-api-host>"
+evaluationServerExternalUrl: "https://<private-els-host>"
+
+ui:
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 8081
+  ingress:
+    enabled: false
+  nodeSelector:
+    workload: featbit
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: featbit
+      effect: NoSchedule
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+api:
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 5000
+  ingress:
+    enabled: false
+  autoscaling:
+    enabled: false
+  nodeSelector:
+    workload: featbit
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: featbit
+      effect: NoSchedule
+  env:
+    - name: Jwt__Algorithm
+      value: HS256
+    - name: Jwt__Key
+      valueFrom:
+        secretKeyRef:
+          name: featbit-jwt-secret
+          key: jwt-key
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 1Gi }
+
+els:
+  enabled: true
+  replicaCount: 3
+  service:
+    type: ClusterIP
+    port: 5100
+  ingress:
+    enabled: false
+  autoscaling:
+    enabled: false
+  rateLimiting:
+    enabled: false
+  nodeSelector:
+    workload: featbit
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: featbit
+      effect: NoSchedule
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: featbit
+                app.kubernetes.io/component: els
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+das:
+  enabled: false
+
+postgresql:
+  enabled: false
+externalPostgresql:
+  hosts:
+    - "<postgres-host>:5432"
+  database: featbit
+  username: "<postgres-user>"
+  existingSecret: featbit-postgresql-secret
+  existingSecretPasswordKey: password
+
+redis:
+  enabled: false
+externalRedis:
+  hosts:
+    - "<redis-host>:<redis-port>"
+  db: 0
+  user: "<redis-user-if-required>"
+  existingSecret: featbit-redis-secret
+  existingSecretPasswordKey: password
+  ssl: true
+
+mongodb:
+  enabled: false
+```
+
+部署前先确认 chart 版本仍能与选定的 PostgreSQL/Redis 服务、TLS 和身份验证方式兼容；
+不要用负载测试来首次验证数据库 migration。然后渲染、安装并确认 ELS endpoint 数量：
+
+```powershell
+helm repo add featbit https://featbit.github.io/featbit-charts/ --force-update
+helm repo update featbit
+
+helm upgrade --install featbit featbit/featbit `
+  --version 0.9.13 `
+  --kube-context $aksContext `
+  --namespace featbit `
+  --create-namespace `
+  --values .\k8s-infra\values\featbit-aks.yaml `
+  --wait `
+  --timeout 20m
+
+kubectl --context $aksContext -n featbit rollout status `
+  deployment/featbit-els --timeout=10m
+kubectl --context $aksContext -n featbit get pods,services,endpointslices -o wide
+```
+
+上面的安装命令要求先把审核后的 values 保存为
+`k8s-infra/values/featbit-aks.yaml`；该文件当前尚未由仓库提供。
+
+## 7. 管理 secrets 与 controller
+
+推荐使用 AKS Workload Identity 和 Key Vault CSI/组织已有的 secret controller，把 Key Vault
+内容同步为 Kubernetes Secret。仅启用 Key Vault CSI addon 不会自动创建这些 Secret；必须
+显式配置 `SecretProviderClass`、访问角色和实际挂载/同步工作负载。
+
+需要的 Kubernetes Secret contract：
+
+| Namespace / Secret | Key | 用途 |
+| --- | --- | --- |
+| `featbit/featbit-jwt-secret` | `jwt-key` | API JWT 签名 |
+| `featbit/featbit-postgresql-secret` | `password` | 外部 PostgreSQL |
+| `featbit/featbit-redis-secret` | `password` | 外部 Redis |
+| `featbit-loadtest/featbit-k6-secret` | `FEATBIT_SERVER_SECRET` | ELS Server SDK 连接 |
+| `featbit-loadtest/featbit-k6-controller-secret` | `FEATBIT_API_ACCESS_TOKEN` | REST flag 管理 |
+
+非敏感配置保持与本地一致：
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: featbit-k6-target
+  namespace: featbit-loadtest
+data:
+  FEATBIT_STREAMING_URL: ws://featbit-els.featbit.svc.cluster.local:5100
+  PROBE_INITIAL_VALUE: baseline
+  EXPECTED_REVISIONS: rev-001,rev-002
+  STRICT_PATCH_DELIVERY: "false"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: featbit-k6-controller
+  namespace: featbit-loadtest
+data:
+  AUTO_CONTROL_REVISIONS: "true"
+  FEATBIT_API_URL: http://featbit-api.featbit.svc.cluster.local:5000
+  FEATBIT_ENVIRONMENT_ID: "<environment-guid>"
+  CONTROLLER_WARMUP_SETTLE_SECONDS: "2"
+  CONTROLLER_START_DELAY_SECONDS: "5"
+  CONTROLLER_REVISION_INTERVAL_SECONDS: "30"
+  CONTROLLER_FINAL_SETTLE_SECONDS: "30"
+```
+
+OpenAPI token 至少需要在目标 environment 中读取、创建、archive、删除 flag 以及更新 targeting
+的权限。上线前只检查 key 是否存在，不读取或打印 Secret 值。
+
+## 8. 适配 TestRun
+
+AKS 使用 [`templates/testrun-aks.yaml`](templates/testrun-aks.yaml)。关键配置为：
+
+```yaml
+spec:
+  parallelism: 2
+  # k6 Operator 为两个 runner 加 required pod anti-affinity。
+  separate: true
+
+  starter:
+    nodeSelector:
+      workload: loadgen
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: loadgen
+        effect: NoSchedule
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: "1", memory: 512Mi }
+
+  runner:
+    image: <acr-login-server>/featbit-k6@sha256:<digest>
+    imagePullPolicy: IfNotPresent
+    nodeSelector:
+      workload: loadgen
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: loadgen
+        effect: NoSchedule
+    resources:
+      requests:
+        cpu: "3"
+        memory: 4Gi
+      limits:
+        memory: 8Gi
+    env:
+      - name: LOADTEST_PARALLELISM
+        value: "2"
+      - name: DISTRIBUTED_SETUP_BARRIER_SECONDS
+        value: "60"
+      - name: DISTRIBUTED_TEARDOWN_GRACE_SECONDS
+        value: "30"
+    # 专用节点不设 CPU limit；保留 envFrom、securityContext、volumeMounts 和 volumes。
+```
+
+k6 Operator `1.5.0` 把 runner hostname 固定为 `<testrun>-1`、`<testrun>-2`，先让两个 runner
+保持 paused，再由 starter 协调启动。脚本据此只让 runner 1 执行预热、revision controller
+和 teardown；连接目标阈值则按两个执行段各 2,500 计算。两个 setup 都补齐到 60 秒，保证
+预热完成后再开始 ramp；预热超时会使该轮 Invalid。
+runner 1 在 teardown 前额外等待 30 秒，避免提前恢复 baseline。模板通过 Pod 名称生成各自的
+`*-summary.json` 和 `*-report.html`，避免 RWX 文件冲突。
+
+两个 runner 的 percentile 不是一个自动合并的全局 percentile。每个 runner 都必须通过阈值，
+因此相同连接数下的 SLO gate 仍然成立；如果报告需要一个精确的全局 percentile 数值，再从
+Prometheus/原始时序输出聚合。分布式模式不在 runner 2 上要求 controller 计数；API 错误会
+主动 abort，而两个 runner 的 revision coverage/final revision 阈值共同验证更新确实传播。
+提交前用当前集群的 CRD 验证字段：
+
+```powershell
+kubectl --context $aksContext explain testrun.spec.runner.nodeSelector
+kubectl --context $aksContext explain testrun.spec.runner.tolerations
+kubectl --context $aksContext explain testrun.spec.runner.resources
+```
+
+## 9. 仓库适配清单
+
+在第一次无人值守 AKS 运行前，至少完成并评审：
+
+- [x] Terraform 创建/销毁临时 AKS、ACR 和隔离节点池。
+- [x] AKS TestRun 模板支持两个分离 runner、唯一报告路径和 ACR image digest。
+- [x] k6 脚本在分布式运行中只由 runner 1 管理 flags。
+- [ ] `common.ps1` 接受显式 `-KubeContext`，默认值仍是 `docker-desktop`，且打印最终目标。
+- [ ] 增加 AKS 专用 bootstrap/render 脚本，不复用本地镜像、RWO PVC 或 NodePort。
+- [ ] 增加 `featbit-aks.yaml`，不包含任何 secret 值。
+- [ ] `prepare-probe-flags.ps1` 能通过受控 API 地址访问 AKS，并继续检查无活动 TestRun。
+- [ ] 结果收集支持 Azure Files RWX，并在删除 TestRun 前验证 JSON/HTML 均已复制。
+- [ ] 所有 `kubectl`/Helm 命令显式传递 context 和 namespace。
+- [ ] smoke 与 baseline 在 AKS 通过后才允许 growth。
+
+完成这些项以前，不要尝试通过临时删除 `Assert-LocalKubernetesContext` 来运行
+`run-test.ps1`。这会把镜像、PVC 和 service 假设一起带入 AKS。
+
+## 10. 运行前 Gate
+
+每轮执行并保存以下检查结果：
+
+```powershell
+kubectl --context $aksContext get nodes `
+  -L agentpool,workload,kubernetes.azure.com/mode `
+  -o wide
+kubectl --context $aksContext top nodes
+
+kubectl --context $aksContext -n featbit get deployments,pods,services,endpointslices -o wide
+kubectl --context $aksContext -n featbit get hpa
+kubectl --context $aksContext -n featbit-loadtest get pvc,pods,testruns,jobs -o wide
+kubectl --context $aksContext get events -A `
+  --field-selector type=Warning `
+  --sort-by=.lastTimestamp
+```
+
+Gate 必须全部满足：
+
+- ELS 为 `3/3` Ready，EndpointSlice 有三个 Ready endpoint；
+- loadgen 节点可分配资源大于 runner request，且没有其他业务 Pod；
+- target 与 loadgen Pod 没有落到同一节点池；
+- HPA/cluster autoscaler 的测量期策略已冻结；
+- ACR image digest 可拉取，Azure Files PVC 已通过写入测试；
+- PostgreSQL/Redis 健康且无连接数、吞吐或内存告警；
+- 没有其他 Pending/Running TestRun；
+- Server SDK secret、OpenAPI token 和 environment GUID 指向同一 environment；
+- 20 个 growth probe flags 的初始值均为 `baseline`；
+- Azure Monitor/Prometheus 指标在测试开始前已经可查询。
+
+## 11. 执行、监控与收集
+
+仓库适配完成后，运行顺序仍然是 smoke → baseline → growth。每轮创建唯一 RUN_ID，先保存
+渲染后的 TestRun YAML，再提交：
+
+```powershell
+$runId = "growth-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+$testRunFile = ".\results\$runId-testrun.yaml"
+
+# 由适配后的脚本生成 $testRunFile；人工审核 context、image digest、资源和 RUN_ID。
+kubectl --context $aksContext apply -f $testRunFile
+
+kubectl --context $aksContext -n featbit-loadtest get `
+  testruns,jobs,pods -w
+```
+
+运行期间至少同时观察：
+
+- k6 runner CPU 使用率、CPU throttling、working set、OOM/restart 和网络吞吐；
+- ELS 各 Pod CPU/throttling、内存、restart、入出站流量与连接分布；
+- API 的 flag update 请求延迟与错误；
+- Redis CPU、内存、连接数、网络和 pub/sub 行为；
+- PostgreSQL CPU、连接、I/O 和慢查询；
+- AKS 节点 CPU、内存、网络、磁盘、conntrack 与 Kubernetes Warning events。
+
+TestRun 自然完成后，先复制并校验：
+
+- 两个 runner 各自的 `*-summary.json`；
+- 两个 runner 各自的 `*-report.html`；
+- 渲染后的 TestRun YAML；
+- Helm values、chart/app 版本、image digest 和节点池快照；
+- 同一时间窗的监控截图或导出数据。
+
+确认结果已落地到仓库外的持久归档后，才删除该轮 TestRun。中止、runner OOM、节点漂移、
+autoscaling 或监控缺口都会使该轮结果成为 Invalid，而不是 FeatBit 性能失败。
+
+## 12. 如何判断传播延迟瓶颈
+
+`p95/p99` 超标本身不能证明服务器处理能力不足。按同一时间窗对齐以下证据：
+
+| 现象 | 更可能的方向 | 下一步 |
+| --- | --- | --- |
+| runner CPU 接近节点 Allocatable 或出现 node pressure | 负载生成器排队 | 增加 loadgen SKU；保持 ELS 不变重跑 |
+| runner 健康，但所有 ELS 同时 CPU/throttling 高 | ELS 容量 | 增加单 Pod CPU 或副本，作为新配置重跑 |
+| 个别 ELS 热、连接分布明显不均 | Service/长连接分配 | 检查 Pod 连接数、滚动更新和负载均衡 |
+| API update 慢，延迟从写入前就开始 | API/数据库控制路径 | 检查 API、PostgreSQL 和 migration/锁等待 |
+| API 快，但 ELS 在收到 Redis 消息后才变慢 | Redis/pub-sub 或 ELS fan-out | 对齐 Redis 与 ELS 指标、日志和 trace |
+| 只有 `probe_sync_latency_ms` 异常，其他链路正常 | 时钟偏差 | 校验节点和 payload 时间基准 |
+| 节点网络/conntrack 接近上限 | AKS 节点或网络层 | 更换 SKU/网络方案，并保持应用配置不变重跑 |
+
+一次只改变一个因素。先证明 runner 不是瓶颈，再调整 ELS；否则无法回答 p95/p99 是由客户端、
+服务端还是基础设施引起。
+
+## 13. 清理与成本控制
+
+自然结束、报告归档和 flag 恢复确认后：
+
+1. 删除已完成的 TestRun/Job/Pod，不删除结果归档。
+2. 将报告、Terraform outputs、tfvars 和监控证据复制到 AKS/ACR 之外。
+3. 在 `terraform/aks/` 中保存并审核 `terraform plan -destroy`。
+4. 执行 destroy；验证 `featbit-devtest` 仍存在，而 `featbit-devtest-nodes` 已不存在。
+5. 将 ACR image digest 写入报告；ACR 本身会由 Terraform 删除。
+
+完整命令见 [Terraform destroy 流程](terraform/aks/README.md#destroy-after-a-test)。不要在
+AKS 管理的 `featbit-devtest-nodes` 中手工放置任何资源。
+
+## 常见问题
+
+- **runner Pending**：检查 `workload=loadgen` label、taint/toleration、Allocatable 和区域 quota。
+- **Operator Pending**：Helm release 也必须容忍 loadgen taint，不能只配置 TestRun runner。
+- **ImagePullBackOff**：检查 ACR DNS/防火墙、kubelet identity 权限和 digest 是否存在。
+- **PVC Multi-Attach 或 Pending**：仍在使用 RWO/磁盘 StorageClass；改为 Azure Files CSI RWX。
+- **PVC Permission denied**：先用相同 `runAsUser/fsGroup` 的测试 Pod 验证 mount options。
+- **ELS/API 不可达**：同集群使用 ClusterIP DNS；跨集群必须配置私网入口、路由和 DNS。
+- **controller 401/403**：token 不属于目标 environment 或缺少 flag 管理权限。
+- **controller 成功但连接认证失败**：Server SDK secret 与 controller environment 不一致。
+- **延迟高但 ELS 很空闲**：先检查 loadgen 节点 CPU/网络、runner 内存和跨节点时钟。
+- **结果为 0 ms**：同时检查 metric `count`；`count=0` 不是零延迟，而是没有有效样本。
+
+## 官方参考
+
+- [AKS baseline architecture](https://learn.microsoft.com/azure/architecture/reference-architectures/containers/aks/baseline-aks)
+- [AKS system node pools](https://learn.microsoft.com/azure/aks/use-system-pools)
+- [AKS 与 ACR 集成](https://learn.microsoft.com/azure/aks/cluster-container-registry-integration)
+- [AKS Azure Files CSI](https://learn.microsoft.com/azure/aks/create-volume-azure-files)
+- [AKS Key Vault CSI driver](https://learn.microsoft.com/azure/aks/csi-secrets-store-driver)
+- [AKS monitoring](https://learn.microsoft.com/azure/aks/monitor-aks)
+- [Azure Retail Prices API](https://learn.microsoft.com/rest/api/cost-management/retail-prices/azure-retail-prices)
+- [AzureRM AKS resource](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/kubernetes_cluster)
+- [k6 Operator 安装](https://grafana.com/docs/k6/latest/set-up/set-up-distributed-k6/install-k6-operator/)
+- [k6 TestRun CRD 配置](https://grafana.com/docs/k6/latest/set-up/set-up-distributed-k6/usage/configure-testrun-crd/)
+- [FeatBit Helm chart](https://github.com/featbit/featbit-charts)
+
+[返回顶部](#top)

@@ -4,8 +4,13 @@ Use k6 to open independent FeatBit Server SDK-compatible WebSocket connections a
 
 Use k6 2.1.0 on both the local workstation and the remote load generator.
 
-For the Docker Desktop Kubernetes rehearsal, including repeatable `TestRun` execution and
-HTML/JSON result collection, see [`k8s-infra/README.md`](k8s-infra/README.md).
+Deployment runbooks:
+
+- Docker Desktop rehearsal and local result collection: [`k8s-infra/README.md`](k8s-infra/README.md)
+- AKS migration, isolation, sizing, observability, and execution gates:
+  [`k8s-infra/README-AKS.md`](k8s-infra/README-AKS.md)
+- Ephemeral AKS/ACR/node-pool Terraform stack:
+  [`k8s-infra/terraform/aks/`](k8s-infra/terraform/aks/README.md)
 
 ## Test profiles
 
@@ -119,7 +124,8 @@ Measured hold: `T+130s` through `T+730s`.
 
 Docker Desktop Kubernetes runs use the REST controller documented in
 [`k8s-infra/README.md`](k8s-infra/README.md). With `AUTO_CONTROL_REVISIONS=true`, the
-same k6 runner restores every probe flag to `baseline` in `setup()`, applies
+single local runner—or runner 1 in the distributed AKS profile—restores every probe flag to
+`baseline` in `setup()`, applies
 an unmeasured `baseline -> rev-001 -> baseline` warm-up before any WebSocket is
 opened, applies `rev-001` and then `rev-002` during the measured hold, and restores
 `baseline` in `teardown()`. No manual flag changes are required.

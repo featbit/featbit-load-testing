@@ -7,6 +7,9 @@ JSON 与 HTML 报告。
 这里是本地流程演练环境，不用于得出 AKS 容量结论。所有 PowerShell 脚本都要求当前
 `kubectl` context 恰好为 `docker-desktop`，并在每次调用时显式传入该 context。
 
+要把 FeatBit 与负载生成器迁移到 Azure，并形成可归因的容量结果，请使用
+[AKS 负载测试迁移与运行指南](README-AKS.md)。
+
 ## 执行顺序
 
 1. 初始化 k6 Operator、runner 镜像和结果存储。

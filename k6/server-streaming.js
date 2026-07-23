@@ -13,6 +13,11 @@ import {
 } from "./lib/api-controller.js";
 import { generateConnectionToken } from "./lib/connection-token.js";
 import {
+  expectedConnectionsPerRunner,
+  remainingSetupBarrierMilliseconds,
+  runnerIndexFromHostname,
+} from "./lib/distribution.js";
+import {
   extractProbeSnapshot,
   findFeatureFlag,
   parseExpectedRevisions,
@@ -61,6 +66,11 @@ const EXPECTED_REVISION_INDEX = Object.fromEntries(
 
 const MAX_CONNECTIONS = integerEnv("MAX_CONNECTIONS", 10_000);
 const CONNECTIONS_PER_SECOND = integerEnv("CONNECTIONS_PER_SECOND", 200);
+const LOADTEST_PARALLELISM = integerEnv("LOADTEST_PARALLELISM", 1);
+const EXPECTED_CONNECTIONS_PER_RUNNER = expectedConnectionsPerRunner(
+  MAX_CONNECTIONS,
+  LOADTEST_PARALLELISM,
+);
 const RAMP_UP_SECONDS = Math.ceil(MAX_CONNECTIONS / CONNECTIONS_PER_SECOND);
 const STABILIZATION_SECONDS = integerEnv("STABILIZATION_SECONDS", 30, 0);
 const HOLD_DURATION_SECONDS = integerEnv("HOLD_DURATION_SECONDS", 600);
@@ -92,6 +102,16 @@ const CONTROLLER_REVISION_INTERVAL_SECONDS = integerEnv(
 const CONTROLLER_FINAL_SETTLE_SECONDS = integerEnv(
   "CONTROLLER_FINAL_SETTLE_SECONDS",
   30,
+);
+const DISTRIBUTED_SETUP_BARRIER_SECONDS = integerEnv(
+  "DISTRIBUTED_SETUP_BARRIER_SECONDS",
+  LOADTEST_PARALLELISM > 1 ? 60 : 0,
+  0,
+);
+const DISTRIBUTED_TEARDOWN_GRACE_SECONDS = integerEnv(
+  "DISTRIBUTED_TEARDOWN_GRACE_SECONDS",
+  LOADTEST_PARALLELISM > 1 ? 30 : 0,
+  0,
 );
 
 const RAMP_UP_MS = RAMP_UP_SECONDS * 1_000;
@@ -163,7 +183,10 @@ if (STRICT_PATCH_DELIVERY) {
 }
 
 const thresholds = {
-  connection_opened: [`count>=${MAX_CONNECTIONS}`, `count<=${MAX_CONNECTIONS}`],
+  connection_opened: [
+    `count>=${EXPECTED_CONNECTIONS_PER_RUNNER}`,
+    `count<=${EXPECTED_CONNECTIONS_PER_RUNNER}`,
+  ],
   connection_open_success: ["rate==1"],
   initial_sync_success: ["rate==1"],
   ready_before_hold: ["rate==1"],
@@ -196,7 +219,7 @@ for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
   ];
 }
 
-if (AUTO_CONTROL_REVISIONS) {
+if (AUTO_CONTROL_REVISIONS && LOADTEST_PARALLELISM === 1) {
   thresholds.controller_api_error = ["count==0"];
   thresholds.controller_update_success = ["rate==1"];
   thresholds.controller_warmup_updates = [`count==${PROBE_FLAG_KEYS.length * 2}`];
@@ -464,7 +487,17 @@ function setAllProbeFlags(
 }
 
 export function setup() {
+  const setupStartedAt = Date.now();
   const errors = [];
+  let runnerIndex = 1;
+
+  try {
+    runnerIndex = runnerIndexFromHostname(__ENV.HOSTNAME, LOADTEST_PARALLELISM);
+  } catch (error) {
+    errors.push(error.message);
+  }
+
+  const controlsProbeFlags = AUTO_CONTROL_REVISIONS && runnerIndex === 1;
 
   if (!/^wss?:\/\//.test(FEATBIT_STREAMING_URL)) {
     errors.push("FEATBIT_STREAMING_URL must start with ws:// or wss://");
@@ -493,7 +526,7 @@ export function setup() {
   if (INITIAL_SYNC_TIMEOUT_SECONDS > STABILIZATION_SECONDS && STABILIZATION_SECONDS > 0) {
     errors.push("STABILIZATION_SECONDS must be at least INITIAL_SYNC_TIMEOUT_SECONDS");
   }
-  if (AUTO_CONTROL_REVISIONS) {
+  if (controlsProbeFlags) {
     try {
       normalizeApiBaseUrl(FEATBIT_API_URL);
     } catch (error) {
@@ -514,13 +547,18 @@ export function setup() {
         "The controller revision schedule and final settle period must fit inside HOLD_DURATION_SECONDS",
       );
     }
+    if (LOADTEST_PARALLELISM > 1 && DISTRIBUTED_TEARDOWN_GRACE_SECONDS === 0) {
+      errors.push(
+        "DISTRIBUTED_TEARDOWN_GRACE_SECONDS must be greater than 0 for a distributed run",
+      );
+    }
   }
 
   if (errors.length > 0) {
     throw new Error(`Invalid test configuration:\n- ${errors.join("\n- ")}`);
   }
 
-  if (AUTO_CONTROL_REVISIONS) {
+  if (controlsProbeFlags) {
     console.log(`[controller] restoring ${PROBE_FLAG_KEYS.length} probe flag(s) to baseline`);
     setAllProbeFlags(PROBE_INITIAL_VALUE, "pre-run baseline");
 
@@ -539,22 +577,47 @@ export function setup() {
     }
   }
 
+  const setupBarrierRemainingMs = remainingSetupBarrierMilliseconds(
+    LOADTEST_PARALLELISM,
+    DISTRIBUTED_SETUP_BARRIER_SECONDS,
+    Date.now() - setupStartedAt,
+  );
+  if (setupBarrierRemainingMs > 0) {
+    console.log(
+      `[runner ${runnerIndex}] waiting ${Math.ceil(setupBarrierRemainingMs / 1_000)}s ` +
+        "for the distributed setup barrier",
+    );
+    sleep(setupBarrierRemainingMs / 1_000);
+  }
+
+  let controllerDescription;
+  if (controlsProbeFlags) {
+    controllerDescription =
+      `- REST controller: pre-warmed, then automatic ${PROBE_INITIAL_VALUE} -> ` +
+      EXPECTED_REVISIONS.join(" -> ");
+  } else if (AUTO_CONTROL_REVISIONS) {
+    controllerDescription = "- REST controller: handled by runner 1";
+  } else {
+    controllerDescription =
+      "- during the measured hold, update every probe flag in this order: " +
+      EXPECTED_REVISIONS.join(" -> ");
+  }
+
   const holdStartsAt = RAMP_UP_SECONDS + STABILIZATION_SECONDS;
   console.log(
     [
       "FeatBit server-streaming load test",
       `- ${MAX_CONNECTIONS} connections, approximately ${CONNECTIONS_PER_SECOND}/s (${RAMP_UP_SECONDS}s ramp-up)`,
+      `- runner ${runnerIndex}/${LOADTEST_PARALLELISM}: ${EXPECTED_CONNECTIONS_PER_RUNNER} connections`,
       `- measured hold: T+${holdStartsAt}s through T+${holdStartsAt + HOLD_DURATION_SECONDS}s`,
       `- probe flags (${PROBE_FLAG_KEYS.length}): ${PROBE_FLAG_KEYS.join(", ")}`,
       `- initial value for every probe flag: ${PROBE_INITIAL_VALUE}`,
-      AUTO_CONTROL_REVISIONS
-        ? `- REST controller: pre-warmed, then automatic ${PROBE_INITIAL_VALUE} -> ${EXPECTED_REVISIONS.join(" -> ")}`
-        : `- during the measured hold, update every probe flag in this order: ${EXPECTED_REVISIONS.join(" -> ")}`,
+      controllerDescription,
       `- duplicate/stale patch delivery: ${STRICT_PATCH_DELIVERY ? "strict (recorded and fails the run)" : "ignored (SDK-compatible)"}`,
     ].join("\n"),
   );
 
-  return { autoController: AUTO_CONTROL_REVISIONS };
+  return { autoController: controlsProbeFlags };
 }
 
 export function controlProbeRevisions(data) {
@@ -585,6 +648,13 @@ export function controlProbeRevisions(data) {
 export function teardown(data) {
   if (!data?.autoController) {
     return;
+  }
+
+  if (DISTRIBUTED_TEARDOWN_GRACE_SECONDS > 0) {
+    console.log(
+      `[controller] waiting ${DISTRIBUTED_TEARDOWN_GRACE_SECONDS}s for other runners to drain`,
+    );
+    sleep(DISTRIBUTED_TEARDOWN_GRACE_SECONDS);
   }
 
   console.log(`[controller] restoring ${PROBE_FLAG_KEYS.length} probe flag(s) to baseline`);
