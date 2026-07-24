@@ -13,6 +13,9 @@ param(
     [ValidateRange(5, 120)]
     [int] $TimeoutMinutes = 30,
 
+    [ValidateRange(3, 720)]
+    [int] $MaxConsecutiveSampleErrors = 120,
+
     [string] $OutputDirectory = ""
 )
 
@@ -309,8 +312,11 @@ do {
             message = $_.Exception.Message
         }
         Write-Warning "Resource sample failed: $($_.Exception.Message)"
-        if ($consecutiveErrors -ge 3) {
-            throw "Three consecutive resource samples failed."
+        if ($consecutiveErrors -ge $MaxConsecutiveSampleErrors) {
+            throw (
+                "$consecutiveErrors consecutive resource samples failed; " +
+                "the configured maximum is $MaxConsecutiveSampleErrors."
+            )
         }
     }
 
@@ -341,6 +347,7 @@ $summary = [ordered]@{
     completedAtUtc = [DateTime]::UtcNow.ToString("o")
     finalStage = $finalStage
     sampleIntervalSeconds = $SampleIntervalSeconds
+    maxConsecutiveSampleErrors = $MaxConsecutiveSampleErrors
     sampleCount = $sampleCount
     sampleErrors = $sampleErrors
     complete = (

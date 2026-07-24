@@ -33,7 +33,8 @@ Azure 中运行，并通过资源隔离和监控判断传播延迟来自负载�
 
 AKS growth 使用独立、分布式的负载生成器，并固定 FeatBit 副本数和资源边界：
 
-- growth 是 10,000 条连接、`parallelism >= 5`；推荐 p5 时每 runner 2,000 条；
+- growth 是 10,000 条连接、`parallelism >= 5`；尾延迟对照固定使用 p40、
+  每 runner 250 条、每个 loadgen node 4 Pods；
 - growth-plus 是 20,000 条连接、`parallelism >= 10`；推荐 p10 时每 runner 2,000 条；
 - 两者均预置 20 个 flags，只测 flag-01；flag-02 用于满连接后不计分预热；
 - ELS 固定为 6 个副本，每个 `500m CPU / 256Mi` request、
@@ -86,7 +87,7 @@ flowchart LR
         end
         subgraph Loadgen[loadgen 节点池]
             K6O[k6 Operator]
-            Runner[k6 runner x5 / x10]
+            Runner[k6 runner x40<br/>每 loadgen node x4]
             Results[results-reader]
         end
         Files[(Azure Files RWX PVC)]
@@ -116,7 +117,7 @@ quota 必须在目标 region 中先确认。
 | --- | --- | ---: | --- |
 | `system` | `Standard_D2ds_v5` | 1 | 临时集群的 CoreDNS、CSI 等系统组件 |
 | `featbit` | `Standard_D4ds_v5` | 3 | UI、API、6 个 ELS 及临时 PG/Redis；与 runner 隔离 |
-| `loadgen` | `Standard_D4ds_v5` | 6 / 10 | growth 可用现有 6 节点；growth-plus 扩为 10，一节点一个 runner |
+| `loadgen` | `Standard_D4ds_v5` | 10 | 当前 growth 尾延迟对照固定 10 节点、每节点 4 runners |
 
 首次 AKS 对照跑使用以下工作负载配置：
 
@@ -128,6 +129,7 @@ quota 必须在目标 region 中先确认。
 | 内置 PostgreSQL | 1 | `1 CPU / 2Gi` | 仅 `4Gi` memory | 无 CPU limit，`32Gi managed-csi-premium` |
 | 内置 Redis | 1 | `1 CPU / 1Gi` | 仅 `2Gi` memory | 无 CPU limit，`8Gi managed-csi-premium` |
 | growth runner | >=5 | 每个 `2 CPU / 4Gi` | 每个仅 `8Gi` memory | p5 时 2,000 连接/runner |
+| growth p40 runner | 40 | 每个 `250m / 768Mi` | 每个仅 `1536Mi` memory | 10 nodes × 4 Pods；250 连接/runner |
 | growth-plus runner | >=10 | 每个 `3 CPU / 6Gi` | 每个仅 `10Gi` memory | p10 时 2,000 连接/runner |
 
 6 个 ELS 通过 `topologySpreadConstraints` 在三个 target 节点上严格形成 `2 + 2 + 2`。
@@ -159,8 +161,9 @@ Terraform 默认使用 AKS Free tier 和 ACR Basic。可随时运行
 1. 使用专门的 FeatBit project/environment 和 `loadtest-sync-probe-*` flags。
 2. Server SDK secret 与 OpenAPI access token 必须属于同一个 environment。
 3. 同一 environment 同一时间只有一个 Pending 或 Running 的 TestRun。
-4. AKS Profile 固定 `separate: true`；growth 至少 p5，growth-plus 至少 p10，loadgen
-   节点数必须不小于 parallelism。
+4. growth 至少 p5、growth-plus 至少 p10；`-RunnersPerNode 1` 时使用
+   `separate: true`，多 Pod/节点时使用 `separate: false` 加 topology spread。loadgen
+   节点数至少为 `ceil(parallelism / runnersPerNode)`。
 5. 测量期间固定节点数、Pod 副本数和 HPA 状态，不执行升级、部署或节点维护。
 6. 所有节点与外部依赖保持时钟同步。该测试用 flag payload 的 `updatedAt` 计算传播延迟。
 7. 记录 AKS 版本、节点 SKU/数量、Helm chart 版本、镜像 digest 和所有资源配额。
@@ -531,6 +534,28 @@ The local API call above reaches the ClusterIP Service through `kubectl port-for
 `http://featbit-api.featbit.svc.cluster.local:5000`, and streaming remains
 `ws://featbit-els.featbit.svc.cluster.local:5100`.
 
+默认是两次正式 revision。需要 growth 的多次重复采样时，两个脚本必须传入完全相同的
+revision 集合；例如 10 次变更：
+
+```powershell
+$revisionSet = ((1..10) | ForEach-Object { "rev-{0:D3}" -f $_ }) -join ","
+
+.\k8s-infra\scripts\configure-target.ps1 `
+  -KubeContext $aksContext `
+  -StreamingUrl "ws://featbit-els.featbit.svc.cluster.local:5100" `
+  -ServerSecret $serverSecret `
+  -ExpectedRevisions $revisionSet
+
+.\k8s-infra\scripts\prepare-probe-flags.ps1 `
+  -KubeContext $aksContext `
+  -ApiUrl "http://127.0.0.1:5000" `
+  -ProbeFlagCount $rendered.ProvisionedProbeFlagCount `
+  -ExpectedRevisions $revisionSet
+```
+
+10 次、每次间隔 30 秒需要至少 300 秒的 hold window，因此只用于 hold 足够长的 growth /
+growth-plus；不要直接套到 smoke、baseline 或 baseline-plus。
+
 非敏感配置保持与本地一致：
 
 ```yaml
@@ -626,16 +651,32 @@ $testRunFile
 该脚本只执行只读检查、写入本地 `results/<run-id>-testrun.yaml` 和 metadata，并使用
 `kubectl apply --dry-run=server` 验证 CRD；它不会在集群中创建 TestRun、Job 或 runner Pod。
 必须先在 AKS 完成 smoke，再以相同命令依次渲染 baseline、baseline-plus、growth 和
-growth-plus，不能因为本地测试通过就跳过 AKS 的较低档位。growth 使用
-`-Parallelism 5`；growth-plus 使用 `-Parallelism 10`，并会在 loadgen 节点不足时拒绝渲染。
+growth-plus，不能因为本地测试通过就跳过 AKS 的较低档位。最低配置是 growth p5、
+growth-plus p10。当前 10k 尾延迟对照固定使用：
+
+```powershell
+$rendered = .\k8s-infra\scripts\render-aks-testrun.ps1 `
+  -Profile growth `
+  -KubeContext $aksContext `
+  -RunnerImage $runnerImage `
+  -Parallelism 40 `
+  -RunnersPerNode 4 `
+  -RunnerCpuRequest 250m `
+  -RunnerMemoryRequest 768Mi `
+  -RunnerMemoryLimit 1536Mi `
+  -Note "10k p40 tail-latency comparison"
+```
+
+渲染器会要求 10 个带 `workload=loadgen` 的节点，并通过 topology spread 严格形成每节点
+4 Pods。
 
 渲染后的关键配置为：
 
 ```yaml
 spec:
   parallelism: <profile parallelism>
-  # k6 Operator 为 runner 加 required pod anti-affinity。
-  separate: true
+  # RunnersPerNode=1 时为 true；多 Pod/节点时由 topology spread 控制。
+  separate: <true-or-false>
 
   initializer:
     image: <acr-login-server>/featbit-k6@sha256:<digest>
@@ -718,12 +759,11 @@ kubectl --context $aksContext explain testrun.spec.runner.resources
 - `runner.image` 是 ACR `@sha256:` digest，而不是可变 tag；
 - `initializer.image` 与 `runner.image` 是完全相同的 ACR digest，确保 initializer 能读取
   `/tests/k6/server-streaming.js`；
-- `parallelism` 等于本轮显式传入的值、`separate: true`；
+- `parallelism` 和 `separate` 与本轮 `Parallelism / RunnersPerNode` 一致；
 - runner、starter 和 initializer 都要求 `workload: loadgen`；
 - runner 的 API/streaming URL 都是 `.svc.cluster.local`；
-- smoke/baseline runner request 为每个 `1 CPU / 512Mi`，baseline-plus 为
-  `2 CPU / 2Gi`，growth 为 `2 CPU / 4Gi`，growth-plus 为 `3 CPU / 6Gi`；都没有 CPU
-  limit，memory limit 分别是 `4Gi / 4Gi / 6Gi / 8Gi / 10Gi`；
+- runner resources 与 metadata 中的渲染参数一致；当前 growth p40 固定为每 Pod
+  `250m CPU / 768Mi` request、`1536Mi` memory limit 且无 CPU limit；
 - baseline 与 baseline-plus 都在 environment 中保留 10 个 probe flags：
   `loadtest-sync-probe-01` 是唯一计分 flag；`loadtest-sync-probe-02` 在所有连接建立并完成
   stabilization 后执行一次不计分的 `baseline -> rev-001 -> baseline` 广播预热，随后才变更
@@ -797,7 +837,7 @@ kubectl --context $aksContext get events -A `
 
 Gate 必须全部满足：
 
-- ELS 为 `3/3` Ready，EndpointSlice 有三个 Ready endpoint；
+- ELS 为 `6/6` Ready，三个 featbit nodes 各有两个 ELS Pod，EndpointSlice 有六个 Ready endpoint；
 - loadgen 节点可分配资源大于 runner request，且没有其他业务 Pod；
 - target 与 loadgen Pod 没有落到同一节点池；
 - HPA/cluster autoscaler 的测量期策略已冻结；
@@ -843,7 +883,8 @@ $resourceMonitor = Start-Process pwsh `
     "-RunId", $runId,
     "-KubeContext", $aksContext,
     "-SampleIntervalSeconds", "15",
-    "-TimeoutMinutes", "30"
+    "-TimeoutMinutes", "30",
+    "-MaxConsecutiveSampleErrors", "120"
   )
 
 kubectl --context $aksContext -n featbit-loadtest get testrun $testRunName -w
@@ -856,6 +897,10 @@ growth 和 growth-plus 必须启动资源监控；缺少
 - featbit、loadgen、system 节点 CPU 与 working set；
 - `featbit` namespace 中 ELS、API、UI、PostgreSQL、Redis 容器；
 - `featbit-loadtest` namespace 中每个 runner 与辅助 Pod。
+
+控制端短暂 DNS/API 断线会记录在 `sampleErrors`，但监控器会继续尝试恢复；默认最多容忍
+120 次连续失败。只要出现采样错误，资源摘要会诚实标记为不完整，延迟报告本身仍可单独
+归档；正式资源结论应以没有采样缺口的重复轮次为准。
 
 `kubectl get -w` 只支持一种资源类型，不能 watch `jobs,pods` 组合。在第二个 PowerShell
 窗口单独观察 runner Pod；需要时另取 Job 快照：
@@ -888,6 +933,11 @@ TestRun 的 `status.stage` 变成 `finished` 后，用收集脚本复制并校�
 $aksContext = "aks-featbit-load-testing"
 $runId = "smoke-20260723-153511-5d125acc-cbab"
 
+# 必须在下一次 Helm rollout/rollback 前固化本轮实际 ELS 镜像和 Pod placement。
+.\k8s-infra\scripts\capture-aks-els-evidence.ps1 `
+  -RunId $runId `
+  -KubeContext $aksContext
+
 $collected = .\k8s-infra\scripts\collect-results-aks.ps1 `
   -RunId $runId `
   -KubeContext $aksContext
@@ -901,9 +951,21 @@ Invoke-Item $collected.ArchiveDirectory
 - 要求 TestRun 已自然到达 `finished`，且每个 runner Job 都是 `Complete`；
 - 要求每个 runner 恰好有一份 `*-summary.json` 和一份 `*-report.html`；
 - 比对 PVC 远端文件与本地副本的 SHA-256；
+- 为 AKS API 的瞬时 EOF/连接中断设置 30 秒请求超时与有限重试；重跑时只续传哈希一致的缺失
+  文件，绝不覆盖内容不同的既有证据；
 - 保存 TestRun/Job/Pod 快照、事件、各 Job 日志、渲染后的 YAML 与 metadata；
 - 对 growth/growth-plus 要求资源 samples/summary 完整，并把容器/节点峰值一并归档；
+- 若事先执行 ELS evidence 脚本，一并保存官方镜像 digest 和实际 Pod placement；
 - 生成 `collection.json` 和 `checksums.sha256`，但不会删除任何集群资源。
+
+归档后生成“完整”和“去除 >100ms 波峰”两份延迟报告：
+
+```powershell
+.\k8s-infra\scripts\analyze-aks-latency.ps1 -RunId $runId
+```
+
+两轮以上可用 `compare-aks-latency-runs.ps1` 生成同表对照；`-RunId` 与 `-Label` 必须一一
+对应。对照表会包含逐 revision 延迟、波峰占比、ELS placement 和资源证据完整性。
 
 如果 TestRun 已是 `finished`，但 runner 因 k6 阈值失败而成为 `Failed`，先保留现场，再用诊断
 模式收集全部 runner 报告：

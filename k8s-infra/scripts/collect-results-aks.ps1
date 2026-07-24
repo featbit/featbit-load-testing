@@ -25,14 +25,32 @@ function Invoke-KubectlText {
         [string[]] $Arguments,
 
         [Parameter(Mandatory)]
-        [string] $FailureMessage
+        [string] $FailureMessage,
+
+        [ValidateRange(1, 10)]
+        [int] $MaxAttempts = 4
     )
 
-    $output = (& kubectl @Arguments | Out-String)
-    if ($LASTEXITCODE -ne 0) {
-        throw $FailureMessage
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $output = (
+            & kubectl --request-timeout=30s @Arguments |
+                Out-String
+        )
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) {
+            return $output
+        }
+
+        if ($attempt -lt $MaxAttempts) {
+            Write-Warning (
+                "kubectl read failed (attempt $attempt/$MaxAttempts, exit $exitCode); " +
+                "retrying in $($attempt * 2) second(s)."
+            )
+            Start-Sleep -Seconds ($attempt * 2)
+        }
     }
-    return $output
+
+    throw "$FailureMessage kubectl failed after $MaxAttempts attempts."
 }
 
 function Write-Utf8Text {
@@ -207,21 +225,47 @@ else {
 }
 $null = New-Item -ItemType Directory -Force -Path $archiveDirectory
 
-$artifactEvidence = @()
-foreach ($artifact in ($artifacts | Sort-Object Runner, Kind)) {
-    $remotePath = "/results/$($artifact.Name)"
-    $remoteHashLine = Invoke-KubectlText `
-        -Arguments @(
-            "--context", $targetContext,
-            "-n", $namespace,
-            "exec", "results-reader", "--",
-            "sha256sum", $remotePath
-        ) `
-        -FailureMessage "Failed to hash remote artifact '$($artifact.Name)'."
-    $remoteHash = ($remoteHashLine.Trim() -split "\s+")[0].ToLowerInvariant()
-    if ($remoteHash -notmatch "^[a-f0-9]{64}$") {
-        throw "Remote artifact '$($artifact.Name)' returned an invalid SHA-256 hash."
+$sortedArtifacts = @($artifacts | Sort-Object Runner, Kind)
+$hashArguments = @(
+    "--context", $targetContext,
+    "-n", $namespace,
+    "exec", "results-reader", "--",
+    "sha256sum"
+) + @($sortedArtifacts | ForEach-Object {
+    "/results/$($_.Name)"
+})
+$remoteHashOutput = Invoke-KubectlText `
+    -Arguments $hashArguments `
+    -FailureMessage "Failed to hash remote runner artifacts."
+$remoteHashes = @{}
+foreach ($hashLine in @($remoteHashOutput -split "\r?\n")) {
+    if ([string]::IsNullOrWhiteSpace($hashLine)) {
+        continue
     }
+    if ($hashLine -notmatch "^(?<Hash>[a-fA-F0-9]{64})\s+(?<Path>.+)$") {
+        throw "Remote artifact hash output contains an invalid line: '$hashLine'."
+    }
+
+    $artifactName = [IO.Path]::GetFileName($Matches.Path.TrimStart("*"))
+    if ($remoteHashes.ContainsKey($artifactName)) {
+        throw "Remote artifact hash output contains duplicate '$artifactName'."
+    }
+    $remoteHashes[$artifactName] = $Matches.Hash.ToLowerInvariant()
+}
+if ($remoteHashes.Count -ne $sortedArtifacts.Count) {
+    throw (
+        "Expected $($sortedArtifacts.Count) remote artifact hashes; " +
+        "received $($remoteHashes.Count)."
+    )
+}
+
+$artifactEvidence = @()
+foreach ($artifact in $sortedArtifacts) {
+    $remotePath = "/results/$($artifact.Name)"
+    if (-not $remoteHashes.ContainsKey($artifact.Name)) {
+        throw "Remote artifact hash is missing for '$($artifact.Name)'."
+    }
+    $remoteHash = $remoteHashes[$artifact.Name]
 
     $localPath = Join-Path $archiveDirectory $artifact.Name
     $copyRequired = $true
@@ -244,20 +288,46 @@ foreach ($artifact in ($artifacts | Sort-Object Runner, Kind)) {
         $temporaryPath = "$localPath.partial-$([Guid]::NewGuid().ToString('N'))"
         try {
             $temporaryName = Split-Path -Leaf $temporaryPath
-            Push-Location $archiveDirectory
-            try {
-                & kubectl `
-                    --context $targetContext `
-                    -n $namespace `
-                    cp `
-                    "results-reader:$remotePath" `
-                    ".\$temporaryName"
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Failed to copy '$($artifact.Name)' from results-reader."
+            $copySucceeded = $false
+            for ($attempt = 1; $attempt -le 4; $attempt++) {
+                if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $temporaryPath -Force
+                }
+
+                Push-Location $archiveDirectory
+                try {
+                    & kubectl --request-timeout=30s `
+                        --context $targetContext `
+                        -n $namespace `
+                        cp `
+                        "results-reader:$remotePath" `
+                        ".\$temporaryName"
+                    $exitCode = $LASTEXITCODE
+                }
+                finally {
+                    Pop-Location
+                }
+
+                if ($exitCode -eq 0) {
+                    $copySucceeded = $true
+                    break
+                }
+
+                if ($attempt -lt 4) {
+                    Write-Warning (
+                        "Copying '$($artifact.Name)' failed " +
+                        "(attempt $attempt/4, exit $exitCode); " +
+                        "retrying in $($attempt * 2) second(s)."
+                    )
+                    Start-Sleep -Seconds ($attempt * 2)
                 }
             }
-            finally {
-                Pop-Location
+
+            if (-not $copySucceeded) {
+                throw (
+                    "Failed to copy '$($artifact.Name)' from results-reader " +
+                    "after 4 attempts."
+                )
             }
 
             $copiedHash = (
@@ -341,7 +411,9 @@ foreach ($sourceSuffix in @(
     "resource-samples.jsonl",
     "resource-summary.json",
     "resource-monitor.log",
-    "resource-monitor-error.log"
+    "resource-monitor-error.log",
+    "els-deployment.json",
+    "els-pods.json"
 )) {
     $sourcePath = Join-Path $repositoryRoot "results\$RunId-$sourceSuffix"
     if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {

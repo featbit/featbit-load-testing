@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory)]
     [Security.SecureString] $ServerSecret,
 
+    [string] $ExpectedRevisions = "rev-001,rev-002",
+
     [string] $KubeContext = "docker-desktop"
 )
 
@@ -28,6 +30,28 @@ if ($normalizedStreamingUrl.Contains("?")) {
     throw "StreamingUrl must not contain query parameters."
 }
 
+$revisionValues = @(
+    $ExpectedRevisions.Split(
+        ",",
+        [StringSplitOptions]::RemoveEmptyEntries -bor [StringSplitOptions]::TrimEntries
+    )
+)
+if ($revisionValues.Count -eq 0) {
+    throw "ExpectedRevisions must contain at least one value."
+}
+$uniqueRevisionValues = [Collections.Generic.HashSet[string]]::new(
+    [StringComparer]::Ordinal
+)
+foreach ($revisionValue in $revisionValues) {
+    if ($revisionValue -ceq "baseline") {
+        throw "ExpectedRevisions must not contain the initial value 'baseline'."
+    }
+    if (-not $uniqueRevisionValues.Add($revisionValue)) {
+        throw "ExpectedRevisions contains duplicate value '$revisionValue'."
+    }
+}
+$normalizedExpectedRevisions = $revisionValues -join ","
+
 $secretPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($ServerSecret)
 try {
     $plainServerSecret = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($secretPointer)
@@ -41,7 +65,7 @@ try {
         create configmap featbit-k6-target `
         --from-literal="FEATBIT_STREAMING_URL=$normalizedStreamingUrl" `
         --from-literal="PROBE_INITIAL_VALUE=baseline" `
-        --from-literal="EXPECTED_REVISIONS=rev-001,rev-002" `
+        --from-literal="EXPECTED_REVISIONS=$normalizedExpectedRevisions" `
         --from-literal="STRICT_PATCH_DELIVERY=false" `
         --dry-run=client `
         -o yaml | Out-String)
@@ -87,4 +111,5 @@ finally {
 Write-Host ""
 Write-Host "Kubernetes context: $targetContext"
 Write-Host "Target configured: $normalizedStreamingUrl"
+Write-Host "Expected revisions: $normalizedExpectedRevisions"
 Write-Host "Next: run-test.ps1 -Profile smoke"

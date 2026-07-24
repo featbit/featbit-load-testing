@@ -9,7 +9,7 @@ param(
     [Parameter(Mandatory)]
     [string] $RunnerImage,
 
-    [ValidateRange(2, 20)]
+    [ValidateRange(2, 100)]
     [int] $Parallelism = 2,
 
     [ValidateRange(1, 20)]

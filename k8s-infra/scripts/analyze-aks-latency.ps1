@@ -112,6 +112,19 @@ function Format-Range {
     return ("{0:N2}–{1:N2} ms" -f [double]$Minimum, [double]$Maximum)
 }
 
+function Format-RevisionSpikes {
+    param([Parameter(Mandatory)][object] $RevisionSpikeCounts)
+
+    $items = @(
+        foreach ($entry in $RevisionSpikeCounts.GetEnumerator()) {
+            if ([int64]$entry.Value -gt 0) {
+                "rev-$($entry.Key):$($entry.Value)"
+            }
+        }
+    )
+    return $(if ($items.Count -eq 0) { "-" } else { $items -join ", " })
+}
+
 function Get-ThresholdFailures {
     param([Parameter(Mandatory)][object] $Summary)
 
@@ -207,14 +220,45 @@ $rows = @(
         $spikes = Get-Metric `
             -Summary $summary `
             -Name "probe_sync_over_${SpikeCutoffMs}ms"
-        $revision1Spikes = Get-Metric `
-            -Summary $summary `
-            -Name "probe_sync_over_${SpikeCutoffMs}ms{revision_index:1}" `
-            -Optional
-        $revision2Spikes = Get-Metric `
-            -Summary $summary `
-            -Name "probe_sync_over_${SpikeCutoffMs}ms{revision_index:2}" `
-            -Optional
+        $revisionSpikeCounts = [ordered]@{}
+        $revisionLatencyMetrics = [ordered]@{}
+        $taggedLatencyMetrics = @(
+            foreach ($metricProperty in $summary.metrics.PSObject.Properties) {
+                $match = [regex]::Match(
+                    $metricProperty.Name,
+                    "^probe_sync_latency_ms\{revision_index:(?<index>\d+)\}$"
+                )
+                if ($match.Success) {
+                    [pscustomobject]@{
+                        index = [int]$match.Groups["index"].Value
+                        metric = $metricProperty.Value
+                    }
+                }
+            }
+        ) | Sort-Object index
+        foreach ($revisionMetric in $taggedLatencyMetrics) {
+            $revisionLatencyMetrics[[string]$revisionMetric.index] = `
+                $revisionMetric.metric
+        }
+        $revisionMetrics = @(
+            foreach ($metricProperty in $summary.metrics.PSObject.Properties) {
+                $match = [regex]::Match(
+                    $metricProperty.Name,
+                    "^probe_sync_over_$([regex]::Escape([string]$SpikeCutoffMs))ms" +
+                    "\{revision_index:(?<index>\d+)\}$"
+                )
+                if ($match.Success) {
+                    [pscustomobject]@{
+                        index = [int]$match.Groups["index"].Value
+                        metric = $metricProperty.Value
+                    }
+                }
+            }
+        ) | Sort-Object index
+        foreach ($revisionMetric in $revisionMetrics) {
+            $revisionSpikeCounts[[string]$revisionMetric.index] = Get-TrueCount `
+                -RateMetric $revisionMetric.metric
+        }
         $warmupCoverage = Get-Metric `
             -Summary $summary `
             -Name "post_ramp_warmup_coverage"
@@ -242,8 +286,8 @@ $rows = @(
             full = $full
             withoutSpikes = $withoutSpikes
             spikeCount = Get-TrueCount -RateMetric $spikes
-            revision1SpikeCount = Get-TrueCount -RateMetric $revision1Spikes
-            revision2SpikeCount = Get-TrueCount -RateMetric $revision2Spikes
+            revisionSpikeCounts = $revisionSpikeCounts
+            revisionLatencyMetrics = $revisionLatencyMetrics
             warmupPasses = Get-TrueCount -RateMetric $warmupCoverage
             connectionCount = [int64]$connectionOpened.count
             unknownPingWarningCount = [regex]::Matches(
@@ -260,8 +304,82 @@ $rows = @(
     }
 )
 
+$revisionIndexes = @(
+    $rows[0].revisionSpikeCounts.Keys |
+    ForEach-Object { [int]$_ } |
+    Sort-Object
+)
+if ($revisionIndexes.Count -eq 0) {
+    throw "Runner summaries do not contain any revision-specific spike metrics."
+}
+$expectedRevisionIndexes = @(1..$revisionIndexes.Count)
+if (@(
+    Compare-Object `
+        -ReferenceObject $expectedRevisionIndexes `
+        -DifferenceObject $revisionIndexes
+).Count -ne 0) {
+    throw "Revision-specific metrics must use contiguous indexes starting at 1."
+}
+foreach ($row in $rows) {
+    $rowRevisionIndexes = @(
+        $row.revisionSpikeCounts.Keys |
+        ForEach-Object { [int]$_ } |
+        Sort-Object
+    )
+    if (@(
+        Compare-Object `
+            -ReferenceObject $revisionIndexes `
+            -DifferenceObject $rowRevisionIndexes
+    ).Count -ne 0) {
+        throw "Runner $($row.runner) has inconsistent revision-specific metrics."
+    }
+    $rowLatencyRevisionIndexes = @(
+        $row.revisionLatencyMetrics.Keys |
+        ForEach-Object { [int]$_ } |
+        Sort-Object
+    )
+    if (@(
+        Compare-Object `
+            -ReferenceObject $revisionIndexes `
+            -DifferenceObject $rowLatencyRevisionIndexes
+    ).Count -ne 0) {
+        throw "Runner $($row.runner) has inconsistent revision latency metrics."
+    }
+}
+$revisionCount = $revisionIndexes.Count
+
 $fullRollup = Get-TrendRollup -Rows $rows -Property "full"
 $trimmedRollup = Get-TrendRollup -Rows $rows -Property "withoutSpikes"
+$revisionRollups = @(
+    foreach ($revisionIndex in $revisionIndexes) {
+        $revisionRows = @(
+            foreach ($row in $rows) {
+                [pscustomobject]@{
+                    value = $row.revisionLatencyMetrics[[string]$revisionIndex]
+                }
+            }
+        )
+        $rollup = Get-TrendRollup -Rows $revisionRows -Property "value"
+        $revisionSpikeCount = [int64]((
+            $rows |
+            ForEach-Object {
+                [int64]$_.revisionSpikeCounts[[string]$revisionIndex]
+            } |
+            Measure-Object -Sum
+        ).Sum)
+        [pscustomobject]@{
+            revision = $revisionIndex
+            latency = $rollup
+            spikeCount = $revisionSpikeCount
+            spikeRate = if ($rollup.count -eq 0) {
+                0
+            }
+            else {
+                $revisionSpikeCount / [double]$rollup.count
+            }
+        }
+    }
+)
 $spikeCount = [int64](($rows | Measure-Object spikeCount -Sum).Sum)
 $retainedCount = [int64]$trimmedRollup.count
 if ($retainedCount + $spikeCount -ne [int64]$fullRollup.count) {
@@ -285,20 +403,17 @@ $affectedNodes = @(
 )
 $affectedCohorts = @(
     foreach ($row in $rows) {
-        if ($row.revision1SpikeCount -gt 0) {
-            [pscustomobject]@{
-                runner = $row.runner
-                node = $row.node
-                revision = 1
-                spikes = $row.revision1SpikeCount
-            }
-        }
-        if ($row.revision2SpikeCount -gt 0) {
-            [pscustomobject]@{
-                runner = $row.runner
-                node = $row.node
-                revision = 2
-                spikes = $row.revision2SpikeCount
+        foreach ($revisionIndex in $revisionIndexes) {
+            $revisionSpikeCount = [int64]$row.revisionSpikeCounts[
+                [string]$revisionIndex
+            ]
+            if ($revisionSpikeCount -gt 0) {
+                [pscustomobject]@{
+                    runner = $row.runner
+                    node = $row.node
+                    revision = $revisionIndex
+                    spikes = $revisionSpikeCount
+                }
             }
         }
     }
@@ -322,7 +437,7 @@ $fullLines.Add("# $RunId 完整延迟报告")
 $fullLines.Add("")
 $fullLines.Add("## 统计口径")
 $fullLines.Add("")
-$fullLines.Add("- 只统计满连接预热之后 flag-01 的两次正式 revision。")
+$fullLines.Add("- 只统计满连接预热之后 flag-01 的 $revisionCount 次正式 revision。")
 $fullLines.Add("- 完整样本不删除任何 `probe_sync_latency_ms` 数据。")
 $fullLines.Add("- 波峰在运行前固定定义为 `probe_sync_latency_ms > ${SpikeCutoffMs}ms`。")
 $fullLines.Add("- 分布式 k6 无法从各 runner 摘要精确合并全局 percentile；因此平均值、样本数、min/max 和波峰占比是全局精确值，p90/p95/p99 报告为 runner 范围。")
@@ -341,23 +456,39 @@ $fullLines.Add("| runner p99 范围 | $(Format-Range $fullRollup.p99Min $fullRol
 $fullLines.Add("| >${SpikeCutoffMs}ms 波峰样本 | $spikeCount / $($fullRollup.count) ($("{0:P3}" -f $spikeRate)) |")
 $fullLines.Add("| 涉及 runner | $($affectedRunners.Count) / $($rows.Count) |")
 $fullLines.Add("| 涉及 loadgen nodes | $($affectedNodes.Count) / $(@($rows.node | Sort-Object -Unique).Count) |")
-$fullLines.Add("| 涉及 runner × revision 广播批次 | $($affectedCohorts.Count) / $($rows.Count * 2) |")
+$fullLines.Add("| 涉及 runner × revision 广播批次 | $($affectedCohorts.Count) / $($rows.Count * $revisionCount) |")
 $fullLines.Add("| 满连接预热覆盖 | $warmupPasses / $connectionCount |")
 $fullLines.Add("| threshold failures | $($thresholdFailures.Count) |")
 $fullLines.Add("| runner error 日志行 | $errorLineCount |")
 $fullLines.Add("| received pong for unknown ping ID warnings | $unknownPingWarningCount |")
 $fullLines.Add("")
+$fullLines.Add("## Revision 明细")
+$fullLines.Add("")
+$fullLines.Add("| Revision | count | avg | min | runner p95 范围 | runner p99 范围 | max | >${SpikeCutoffMs}ms |")
+$fullLines.Add("| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+foreach ($revisionRollup in $revisionRollups) {
+    $latency = $revisionRollup.latency
+    $fullLines.Add(
+        "| $($revisionRollup.revision) | $($latency.count) | " +
+        "$(Format-Milliseconds $latency.avg) | $(Format-Milliseconds $latency.min) | " +
+        "$(Format-Range $latency.p95Min $latency.p95Max) | " +
+        "$(Format-Range $latency.p99Min $latency.p99Max) | " +
+        "$(Format-Milliseconds $latency.max) | $($revisionRollup.spikeCount) " +
+        "($("{0:P3}" -f $revisionRollup.spikeRate)) |"
+    )
+}
+$fullLines.Add("")
 $fullLines.Add("## Runner 明细")
 $fullLines.Add("")
-$fullLines.Add("| Runner | Node | count | avg | med | p90 | p95 | p99 | max | >${SpikeCutoffMs}ms | rev-1 波峰 | rev-2 波峰 |")
-$fullLines.Add("| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+$fullLines.Add("| Runner | Node | count | avg | med | p90 | p95 | p99 | max | >${SpikeCutoffMs}ms | 波峰 revisions |")
+$fullLines.Add("| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |")
 foreach ($row in $rows) {
     $fullLines.Add(
         "| $($row.runner) | $($row.node) | $($row.full.count) | $("{0:N2}" -f $row.full.avg) | " +
         "$("{0:N2}" -f $row.full.med) | $("{0:N2}" -f $row.full.'p(90)') | " +
         "$("{0:N2}" -f $row.full.'p(95)') | $("{0:N2}" -f $row.full.'p(99)') | " +
         "$("{0:N2}" -f $row.full.max) | $($row.spikeCount) | " +
-        "$($row.revision1SpikeCount) | $($row.revision2SpikeCount) |"
+        "$(Format-RevisionSpikes $row.revisionSpikeCounts) |"
     )
 }
 $fullLines.Add("")
@@ -393,7 +524,7 @@ $trimmedLines.Add("# $RunId 去除偶发波峰后的延迟报告")
 $trimmedLines.Add("")
 $trimmedLines.Add("## 统计口径")
 $trimmedLines.Add("")
-$trimmedLines.Add("- 与完整报告来自同一次 TestRun、同一批连接和同两次 flag 变更。")
+$trimmedLines.Add("- 与完整报告来自同一次 TestRun、同一批连接和同 $revisionCount 次 flag 变更。")
 $trimmedLines.Add("- 仅删除运行前预先定义的 `probe_sync_latency_ms > ${SpikeCutoffMs}ms` 样本。")
 $trimmedLines.Add("- 该视图用于区分常态路径与偶发尾部，不替代完整结果或 SLO 判定。")
 $trimmedLines.Add("")
@@ -452,4 +583,12 @@ $utf8NoBom = [Text.UTF8Encoding]::new($false)
     AffectedRunnerCount = $affectedRunners.Count
     AffectedNodeCount = $affectedNodes.Count
     AffectedCohortCount = $affectedCohorts.Count
+    FullRollup = $fullRollup
+    WithoutSpikesRollup = $trimmedRollup
+    ThresholdFailureCount = $thresholdFailures.Count
+    WarmupPasses = $warmupPasses
+    ConnectionCount = $connectionCount
+    UnknownPingWarningCount = $unknownPingWarningCount
+    ErrorLineCount = $errorLineCount
+    RevisionRollups = $revisionRollups
 }

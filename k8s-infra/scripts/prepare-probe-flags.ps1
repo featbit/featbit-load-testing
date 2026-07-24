@@ -4,6 +4,8 @@ param(
     [ValidateRange(1, 20)]
     [int] $ProbeFlagCount,
 
+    [string] $ExpectedRevisions = "rev-001,rev-002",
+
     [string] $ApiUrl = "http://localhost:30000",
 
     [string] $KubeContext = "docker-desktop"
@@ -13,7 +15,27 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "common.ps1")
 
 $script:ProbeFlagPrefix = "loadtest-sync-probe-"
-$script:RequiredProbeValues = @("baseline", "rev-001", "rev-002")
+$script:RevisionValues = @(
+    $ExpectedRevisions.Split(
+        ",",
+        [StringSplitOptions]::RemoveEmptyEntries -bor [StringSplitOptions]::TrimEntries
+    )
+)
+if ($script:RevisionValues.Count -eq 0) {
+    throw "ExpectedRevisions must contain at least one value."
+}
+$uniqueRevisionValues = [Collections.Generic.HashSet[string]]::new(
+    [StringComparer]::Ordinal
+)
+foreach ($revisionValue in $script:RevisionValues) {
+    if ($revisionValue -ceq "baseline") {
+        throw "ExpectedRevisions must not contain the initial value 'baseline'."
+    }
+    if (-not $uniqueRevisionValues.Add($revisionValue)) {
+        throw "ExpectedRevisions contains duplicate value '$revisionValue'."
+    }
+}
+$script:RequiredProbeValues = @("baseline") + $script:RevisionValues
 
 function Normalize-ApiUrl {
     param([Parameter(Mandatory)][string] $Value)
@@ -182,9 +204,17 @@ function New-ManagedProbeFlag {
     )
 
     $baselineId = [Guid]::NewGuid().ToString()
-    $revision1Id = [Guid]::NewGuid().ToString()
-    $revision2Id = [Guid]::NewGuid().ToString()
     $number = $FlagKey.Substring($script:ProbeFlagPrefix.Length)
+    $variations = @(
+        [ordered]@{ id = $baselineId; name = "Baseline"; value = "baseline" }
+        for ($index = 0; $index -lt $script:RevisionValues.Count; $index++) {
+            [ordered]@{
+                id = [Guid]::NewGuid().ToString()
+                name = "Revision $($index + 1)"
+                value = $script:RevisionValues[$index]
+            }
+        }
+    )
 
     $payload = [ordered]@{
         name = "Load-test sync probe $number"
@@ -192,11 +222,7 @@ function New-ManagedProbeFlag {
         isEnabled = $true
         description = "Reserved for the automated Server SDK streaming load test."
         variationType = "string"
-        variations = @(
-            [ordered]@{ id = $baselineId; name = "Baseline"; value = "baseline" }
-            [ordered]@{ id = $revision1Id; name = "Revision 1"; value = "rev-001" }
-            [ordered]@{ id = $revision2Id; name = "Revision 2"; value = "rev-002" }
-        )
+        variations = $variations
         enabledVariationId = $baselineId
         disabledVariationId = $baselineId
         tags = @("load-test", "streaming-probe")
@@ -351,6 +377,7 @@ try {
     }
 
     Write-Host "Prepared $ProbeFlagCount canonical probe flag(s) in baseline state."
+    Write-Host "Expected revisions: $($script:RevisionValues -join ',')"
     Write-Host "Kubernetes context: $targetContext"
 }
 finally {
