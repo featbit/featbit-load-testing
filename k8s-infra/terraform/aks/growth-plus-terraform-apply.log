@@ -1,0 +1,40 @@
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerService/managedClusters/aks-featbit-load-testing/agentPools/loadgen][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 10s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 20s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 30s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 40s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 50s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 1m0s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 1m10s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 1m20s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 1m30s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Still modifying... [id=/subscriptions/5776697f-f76a-4a4a-9b42-...eatbit-load-testing/agentPools/loadgen, 1m40s elapsed][0m[0m
+[0m[1mazurerm_kubernetes_cluster_node_pool.loadgen: Modifications complete after 1m46s [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerService/managedClusters/aks-featbit-load-testing/agentPools/loadgen][0m
+[0m[1m[32m
+Apply complete! Resources: 0 added, 1 changed, 0 destroyed.
+[0m[0m[1m[32m
+Outputs:
+
+[0macr_login_server = "featbitloadtesting22793c56acr.azurecr.io"
+acr_name = "featbitloadtesting22793c56acr"
+aks_name = "aks-featbit-load-testing"
+get_credentials_command = "az aks get-credentials --resource-group featbit-devtest --name aks-featbit-load-testing --overwrite-existing"
+node_pools = {
+  "featbit" = {
+    "count" = 3
+    "vm_size" = "Standard_D4ds_v5"
+  }
+  "loadgen" = {
+    "count" = 10
+    "vm_size" = "Standard_D4ds_v5"
+  }
+  "system" = {
+    "count" = 1
+    "vm_size" = "Standard_D2ds_v5"
+  }
+}
+node_resource_group = "featbit-devtest-nodes"
+recommended_k6_parallelism = 10
+resource_group_created_by_stack = false
+resource_group_metadata_location = "westus3"
+resource_group_name = "featbit-devtest"

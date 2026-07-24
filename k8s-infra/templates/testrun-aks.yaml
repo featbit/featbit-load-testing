@@ -10,7 +10,7 @@ metadata:
     loadtest.featbit.io/profile: __PROFILE__
 spec:
   parallelism: __PARALLELISM__
-  separate: true
+  separate: __SEPARATE_RUNNERS__
   script:
     localFile: /tests/k6/server-streaming.js
   arguments: >-
@@ -63,6 +63,16 @@ spec:
         app.kubernetes.io/name: featbit-k6-runner
         loadtest.featbit.io/run-id: __RUN_ID__
         loadtest.featbit.io/profile: __PROFILE__
+    topologySpreadConstraints:
+      - maxSkew: 1
+        minDomains: __MIN_LOADGEN_DOMAINS__
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        labelSelector:
+          matchLabels:
+            loadtest.featbit.io/run-id: __RUN_ID__
     resources:
       requests:
         cpu: "__RUNNER_CPU_REQUEST__"
@@ -105,6 +115,10 @@ spec:
         value: "30"
       - name: PROBE_FLAG_KEYS
         value: __PROBE_FLAG_KEYS__
+      - name: POST_RAMP_WARMUP_FLAG_KEY
+        value: "__POST_RAMP_WARMUP_FLAG_KEY__"
+      - name: CONTROLLER_POST_RAMP_WARMUP_SETTLE_SECONDS
+        value: "2"
       - name: MAX_CONNECTIONS
         value: "__MAX_CONNECTIONS__"
       - name: CONNECTIONS_PER_SECOND

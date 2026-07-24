@@ -1,0 +1,113 @@
+azurerm_container_registry.this: Creating...
+azurerm_kubernetes_cluster.this: Creating...
+azurerm_container_registry.this: Still creating... [10s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [10s elapsed]
+azurerm_container_registry.this: Still creating... [20s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [20s elapsed]
+azurerm_container_registry.this: Still creating... [30s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [30s elapsed]
+azurerm_container_registry.this: Creation complete after 34s [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerRegistry/registries/featbitloadtesting22793c56acr]
+azurerm_kubernetes_cluster.this: Still creating... [40s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [50s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [1m0s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [1m10s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [1m20s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [1m30s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [1m40s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [1m50s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [2m0s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [2m10s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [2m20s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [2m30s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [2m40s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [2m50s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [3m0s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [3m10s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [3m20s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [3m30s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [3m40s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [3m50s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [4m0s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [4m10s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [4m20s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [4m30s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [4m40s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [4m50s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [5m0s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [5m10s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [5m20s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [5m30s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [5m40s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [5m50s elapsed]
+azurerm_kubernetes_cluster.this: Still creating... [6m0s elapsed]
+azurerm_kubernetes_cluster.this: Creation complete after 6m5s [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerService/managedClusters/aks-featbit-load-testing]
+azurerm_role_assignment.acr_pull: Creating...
+azurerm_kubernetes_cluster_node_pool.target: Creating...
+azurerm_kubernetes_cluster_node_pool.loadgen: Creating...
+azurerm_role_assignment.acr_pull: Still creating... [10s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [10s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [10s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [20s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [20s elapsed]
+azurerm_role_assignment.acr_pull: Still creating... [20s elapsed]
+azurerm_role_assignment.acr_pull: Still creating... [30s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [30s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [30s elapsed]
+azurerm_role_assignment.acr_pull: Still creating... [40s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [40s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [40s elapsed]
+azurerm_role_assignment.acr_pull: Still creating... [50s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [50s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [50s elapsed]
+azurerm_role_assignment.acr_pull: Creation complete after 51s [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerRegistry/registries/featbitloadtesting22793c56acr/providers/Microsoft.Authorization/roleAssignments/2b165cf3-e52c-b51f-c962-8e2c61782f11]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [1m0s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [1m0s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [1m10s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [1m10s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [1m20s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [1m20s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [1m30s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [1m30s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [1m40s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [1m40s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [1m50s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [1m50s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [2m0s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [2m0s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [2m10s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [2m10s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [2m20s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Still creating... [2m20s elapsed]
+azurerm_kubernetes_cluster_node_pool.target: Creation complete after 2m29s [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerService/managedClusters/aks-featbit-load-testing/agentPools/featbit]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [2m30s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [2m40s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Still creating... [2m50s elapsed]
+azurerm_kubernetes_cluster_node_pool.loadgen: Creation complete after 2m52s [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerService/managedClusters/aks-featbit-load-testing/agentPools/loadgen]
+
+Apply complete! Resources: 5 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+acr_login_server = "featbitloadtesting22793c56acr.azurecr.io"
+acr_name = "featbitloadtesting22793c56acr"
+aks_name = "aks-featbit-load-testing"
+get_credentials_command = "az aks get-credentials --resource-group featbit-devtest --name aks-featbit-load-testing --overwrite-existing"
+node_pools = {
+  "featbit" = {
+    "count" = 3
+    "vm_size" = "Standard_D4ds_v5"
+  }
+  "loadgen" = {
+    "count" = 10
+    "vm_size" = "Standard_D4ds_v5"
+  }
+  "system" = {
+    "count" = 1
+    "vm_size" = "Standard_D2ds_v5"
+  }
+}
+node_resource_group = "featbit-devtest-nodes"
+recommended_k6_parallelism = 10
+resource_group_created_by_stack = false
+resource_group_metadata_location = "westus3"
+resource_group_name = "featbit-devtest"

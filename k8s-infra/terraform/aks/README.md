@@ -4,7 +4,7 @@ This stack creates the Azure infrastructure used by a temporary FeatBit load-tes
 
 - one AKS Free-tier control plane with a small, tainted system pool;
 - a tainted target pool shared by FeatBit UI, API, and ELS Pods;
-- a tainted loadgen pool with two nodes by default;
+- a tainted loadgen pool whose node count is explicitly sized for the selected profile;
 - an ephemeral ACR and the kubelet `AcrPull` role assignment;
 - OIDC Workload Identity and the optional Key Vault CSI add-on.
 
@@ -24,12 +24,10 @@ parent [AKS runbook](../../README-AKS.md) to install the k6 Operator and run the
 | Pool | Default | Purpose |
 | --- | --- | --- |
 | `system` | `1 × Standard_D2ds_v5` | Temporary AKS system services |
-| `featbit` | `2 × Standard_D4ds_v5` | UI/API plus three ELS Pods |
-| `loadgen` | `2 × Standard_D4ds_v5` | Two k6 runners, one per node |
+| `featbit` | `3 × Standard_D4ds_v5` in the active test stack | UI/API plus six ELS Pods |
+| `loadgen` | `6 × Standard_D4ds_v5` for growth | One k6 runner per node; growth-plus uses 10 |
 
-Three ELS replicas do not require three target nodes. The two-node default is the cost-oriented
-rehearsal topology; set `target_node_count = 3` when one ELS replica per node or three failure
-domains are part of the test contract.
+The active test values spread six ELS replicas evenly across three target nodes.
 
 The one-node system pool is also an explicit cost tradeoff. A system-node failure invalidates that
 run. It is not a production AKS recommendation.
@@ -64,6 +62,25 @@ kubectl --context $aksContext get nodes -L agentpool,workload -o wide
 Do not reuse a plan after changing variables or after a failed apply. `terraform.tfvars`, state files,
 plans, and `.terraform/` are ignored by Git.
 
+The growth profile needs at least five loadgen nodes; the checked-in active stack has six.
+Before growth-plus, scale the same D4 pool to ten nodes with a reviewed plan:
+
+```powershell
+Set-Location .\k8s-infra\terraform\aks
+
+terraform plan `
+  -var="loadgen_node_count=10" `
+  -out featbit-growth-plus.tfplan
+
+terraform apply featbit-growth-plus.tfplan
+terraform output node_pools
+```
+
+Do not change `loadgen_node_vm_size` in the same experiment. The historical 50k experiment showed
+about `5.33Gi` peak memory for a 5,000-connection runner. The 20k follow-up keeps D4 so the capacity
+comparison does not also change the generator SKU. After all 20k evidence is collected, scale back
+with a new reviewed plan.
+
 The local state is suitable for a manual ephemeral run. CI should use a remote backend that lives
 outside AKS. Do not store the backend in the AKS-managed node resource group because that group is
 deleted with the cluster.
@@ -79,7 +96,7 @@ together with its bundled PostgreSQL and Redis subcharts:
 
 - PostgreSQL chart `14.0.5`, using PostgreSQL image `16.2.0-debian-11-r1`;
 - Redis chart `18.12.1`, using Redis image `7.2.4-debian-11-r5`;
-- one UI Pod, one API Pod, and three ELS Pods;
+- one UI Pod, one API Pod, and six ELS Pods;
 - PostgreSQL on `1 CPU / 2Gi` request, `4Gi` memory limit, and a `32Gi`
   `managed-csi-premium` disk;
 - Redis on `1 CPU / 1Gi` request, `2Gi` memory limit, and an `8Gi`

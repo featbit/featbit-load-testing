@@ -18,6 +18,10 @@ import {
   runnerIndexFromHostname,
 } from "./lib/distribution.js";
 import {
+  postRampWarmupDurationSeconds,
+  validatePostRampWarmupFlagKey,
+} from "./lib/controller-plan.js";
+import {
   extractProbeSnapshot,
   findFeatureFlag,
   parseExpectedRevisions,
@@ -58,6 +62,9 @@ const RUN_ID = String(__ENV.RUN_ID ?? "local-run").trim();
 const PROBE_FLAG_KEYS = parseProbeFlagKeys(
   __ENV.PROBE_FLAG_KEYS ?? __ENV.PROBE_FLAG_KEY ?? "loadtest-sync-probe",
 );
+const POST_RAMP_WARMUP_FLAG_KEY = String(
+  __ENV.POST_RAMP_WARMUP_FLAG_KEY ?? "",
+).trim();
 const PROBE_INITIAL_VALUE = String(__ENV.PROBE_INITIAL_VALUE ?? "baseline").trim();
 const EXPECTED_REVISIONS = parseExpectedRevisions(__ENV.EXPECTED_REVISIONS);
 const EXPECTED_REVISION_INDEX = Object.fromEntries(
@@ -91,6 +98,11 @@ const STRICT_PATCH_DELIVERY = booleanEnv("STRICT_PATCH_DELIVERY");
 const AUTO_CONTROL_REVISIONS = booleanEnv("AUTO_CONTROL_REVISIONS");
 const CONTROLLER_WARMUP_SETTLE_SECONDS = integerEnv(
   "CONTROLLER_WARMUP_SETTLE_SECONDS",
+  2,
+  0,
+);
+const CONTROLLER_POST_RAMP_WARMUP_SETTLE_SECONDS = integerEnv(
+  "CONTROLLER_POST_RAMP_WARMUP_SETTLE_SECONDS",
   2,
   0,
 );
@@ -150,20 +162,35 @@ const clockSkewDetected = new Counter("clock_skew_detected");
 const probeRevisionReceived = new Counter("probe_revision_received");
 const controllerApiError = new Counter("controller_api_error");
 const controllerWarmupUpdates = new Counter("controller_warmup_updates");
+const controllerPostRampWarmupUpdates = new Counter(
+  "controller_post_ramp_warmup_updates",
+);
 const controllerRevisionUpdates = new Counter("controller_revision_updates");
+const postRampWarmupPatchReceived = new Counter(
+  "post_ramp_warmup_patch_received",
+);
 
 const connectionOpenSuccess = new Rate("connection_open_success");
 const initialSyncSuccess = new Rate("initial_sync_success");
 const readyBeforeHold = new Rate("ready_before_hold");
 const connectionSurvived = new Rate("connection_survived");
 const initialProbeValueSuccess = new Rate("initial_probe_value_success");
+const postRampWarmupCoverage = new Rate("post_ramp_warmup_coverage");
 const probeRevisionCoverage = new Rate("probe_revision_coverage");
 const finalAppliedRevisionSuccess = new Rate("final_applied_revision_success");
 const controllerUpdateSuccess = new Rate("controller_update_success");
+const probeSyncOver60Ms = new Rate("probe_sync_over_60ms");
+const probeSyncOver80Ms = new Rate("probe_sync_over_80ms");
+const probeSyncOver100Ms = new Rate("probe_sync_over_100ms");
 
 const connectionOpenLatency = new Trend("connection_open_latency_ms", true);
 const initialSyncLatency = new Trend("initial_sync_latency_ms", true);
+const postRampWarmupLatency = new Trend("post_ramp_warmup_latency_ms", true);
 const probeSyncLatency = new Trend("probe_sync_latency_ms", true);
+const probeSyncLatencyWithoutSpikes = new Trend(
+  "probe_sync_latency_without_spikes_ms",
+  true,
+);
 const applicationPongLatency = new Trend("application_pong_latency_ms", true);
 const controllerApiLatency = new Trend("controller_api_latency_ms", true);
 
@@ -205,6 +232,10 @@ const thresholds = {
   probe_sync_latency_ms: [`p(95)<${SYNC_P95_MS}`, `p(99)<${SYNC_P99_MS}`],
 };
 
+if (POST_RAMP_WARMUP_FLAG_KEY) {
+  thresholds.post_ramp_warmup_coverage = ["rate==1"];
+}
+
 if (STRICT_PATCH_DELIVERY) {
   thresholds.duplicate_patch = ["count==0"];
   thresholds.stale_patch = ["count==0"];
@@ -217,6 +248,7 @@ for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
     `p(95)<${SYNC_P95_MS}`,
     `p(99)<${SYNC_P99_MS}`,
   ];
+  thresholds[`probe_sync_over_100ms{revision_index:${index + 1}}`] = ["rate<=1"];
 }
 
 if (AUTO_CONTROL_REVISIONS && LOADTEST_PARALLELISM === 1) {
@@ -336,7 +368,40 @@ function recordProbePatch(snapshot, probeState) {
   }
 
   probeSyncLatency.add(latencyMs, revisionTags);
+  probeSyncOver60Ms.add(latencyMs > 60, revisionTags);
+  probeSyncOver80Ms.add(latencyMs > 80, revisionTags);
+  probeSyncOver100Ms.add(latencyMs > 100, revisionTags);
+  if (latencyMs <= 100) {
+    probeSyncLatencyWithoutSpikes.add(latencyMs, revisionTags);
+  }
   probeRevisionReceived.add(1, revisionTags);
+}
+
+function recordPostRampWarmupPatch(snapshot, warmupState) {
+  const warmupRevision = EXPECTED_REVISIONS[0];
+  let phase;
+
+  if (snapshot.revision === warmupRevision && !warmupState.revisionSeen) {
+    warmupState.revisionSeen = true;
+    phase = "revision";
+  } else if (
+    snapshot.revision === PROBE_INITIAL_VALUE &&
+    warmupState.revisionSeen &&
+    !warmupState.baselineSeen
+  ) {
+    warmupState.baselineSeen = true;
+    phase = "baseline";
+  } else {
+    return;
+  }
+
+  const tags = {
+    flag_key: POST_RAMP_WARMUP_FLAG_KEY,
+    phase,
+    revision: snapshot.revision,
+  };
+  postRampWarmupPatchReceived.add(1, tags);
+  postRampWarmupLatency.add(Date.now() - snapshot.updatedAtMs, tags);
 }
 
 function controllerRequest(method, url, body, operation, tags = {}) {
@@ -511,6 +576,11 @@ export function setup() {
   if (PROBE_FLAG_KEYS.length === 0) {
     errors.push("PROBE_FLAG_KEYS must contain at least one key");
   }
+  try {
+    validatePostRampWarmupFlagKey(POST_RAMP_WARMUP_FLAG_KEY, PROBE_FLAG_KEYS);
+  } catch (error) {
+    errors.push(error.message);
+  }
   if (!PROBE_INITIAL_VALUE) {
     errors.push("PROBE_INITIAL_VALUE is required");
   }
@@ -539,8 +609,13 @@ export function setup() {
       errors.push("FEATBIT_ENVIRONMENT_ID is required when AUTO_CONTROL_REVISIONS=true");
     }
 
+    const postRampWarmupSeconds = postRampWarmupDurationSeconds(
+      POST_RAMP_WARMUP_FLAG_KEY,
+      CONTROLLER_POST_RAMP_WARMUP_SETTLE_SECONDS,
+    );
     const finalRevisionOffset =
       CONTROLLER_START_DELAY_SECONDS +
+      postRampWarmupSeconds +
       CONTROLLER_REVISION_INTERVAL_SECONDS * (EXPECTED_REVISIONS.length - 1);
     if (finalRevisionOffset + CONTROLLER_FINAL_SETTLE_SECONDS > HOLD_DURATION_SECONDS) {
       errors.push(
@@ -559,6 +634,17 @@ export function setup() {
   }
 
   if (controlsProbeFlags) {
+    if (POST_RAMP_WARMUP_FLAG_KEY) {
+      console.log(
+        `[controller] restoring post-ramp warm-up flag '${POST_RAMP_WARMUP_FLAG_KEY}' to baseline`,
+      );
+      setProbeFlagValue(
+        POST_RAMP_WARMUP_FLAG_KEY,
+        PROBE_INITIAL_VALUE,
+        "pre-run post-ramp warm-up baseline",
+      );
+    }
+
     console.log(`[controller] restoring ${PROBE_FLAG_KEYS.length} probe flag(s) to baseline`);
     setAllProbeFlags(PROBE_INITIAL_VALUE, "pre-run baseline");
 
@@ -611,6 +697,7 @@ export function setup() {
       `- runner ${runnerIndex}/${LOADTEST_PARALLELISM}: ${EXPECTED_CONNECTIONS_PER_RUNNER} connections`,
       `- measured hold: T+${holdStartsAt}s through T+${holdStartsAt + HOLD_DURATION_SECONDS}s`,
       `- probe flags (${PROBE_FLAG_KEYS.length}): ${PROBE_FLAG_KEYS.join(", ")}`,
+      `- post-ramp warm-up flag: ${POST_RAMP_WARMUP_FLAG_KEY || "disabled"}`,
       `- initial value for every probe flag: ${PROBE_INITIAL_VALUE}`,
       controllerDescription,
       `- duplicate/stale patch delivery: ${STRICT_PATCH_DELIVERY ? "strict (recorded and fails the run)" : "ignored (SDK-compatible)"}`,
@@ -627,6 +714,38 @@ export function controlProbeRevisions(data) {
 
   controllerApiError.add(0);
   try {
+    if (POST_RAMP_WARMUP_FLAG_KEY) {
+      const warmupRevision = EXPECTED_REVISIONS[0];
+      console.log(
+        `[controller] post-ramp warm-up on '${POST_RAMP_WARMUP_FLAG_KEY}': ` +
+          `${PROBE_INITIAL_VALUE} -> ${warmupRevision} -> ${PROBE_INITIAL_VALUE}`,
+      );
+      setProbeFlagValue(
+        POST_RAMP_WARMUP_FLAG_KEY,
+        warmupRevision,
+        "post-ramp warm-up revision",
+      );
+      controllerPostRampWarmupUpdates.add(1, {
+        flag_key: POST_RAMP_WARMUP_FLAG_KEY,
+        phase: "revision",
+      });
+      if (CONTROLLER_POST_RAMP_WARMUP_SETTLE_SECONDS > 0) {
+        sleep(CONTROLLER_POST_RAMP_WARMUP_SETTLE_SECONDS);
+      }
+      setProbeFlagValue(
+        POST_RAMP_WARMUP_FLAG_KEY,
+        PROBE_INITIAL_VALUE,
+        "post-ramp warm-up baseline",
+      );
+      controllerPostRampWarmupUpdates.add(1, {
+        flag_key: POST_RAMP_WARMUP_FLAG_KEY,
+        phase: "baseline",
+      });
+      if (CONTROLLER_POST_RAMP_WARMUP_SETTLE_SECONDS > 0) {
+        sleep(CONTROLLER_POST_RAMP_WARMUP_SETTLE_SECONDS);
+      }
+    }
+
     for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
       const revision = EXPECTED_REVISIONS[index];
       console.log(
@@ -659,6 +778,16 @@ export function teardown(data) {
 
   console.log(`[controller] restoring ${PROBE_FLAG_KEYS.length} probe flag(s) to baseline`);
   setAllProbeFlags(PROBE_INITIAL_VALUE, "post-run baseline");
+  if (POST_RAMP_WARMUP_FLAG_KEY) {
+    console.log(
+      `[controller] restoring post-ramp warm-up flag '${POST_RAMP_WARMUP_FLAG_KEY}' to baseline`,
+    );
+    setProbeFlagValue(
+      POST_RAMP_WARMUP_FLAG_KEY,
+      PROBE_INITIAL_VALUE,
+      "post-run warm-up baseline",
+    );
+  }
 }
 
 export default function () {
@@ -696,6 +825,10 @@ export default function () {
     probes: PROBE_FLAG_KEYS.map((key, index) =>
       createProbeState(key, index, EXPECTED_REVISIONS.length),
     ),
+    postRampWarmup: {
+      revisionSeen: false,
+      baselineSeen: false,
+    },
     finalized: false,
   };
 
@@ -730,6 +863,11 @@ export default function () {
     initialProbeValueSuccess.add(
       state.probes.every((probeState) => probeState.initialValueValid),
     );
+    if (POST_RAMP_WARMUP_FLAG_KEY) {
+      postRampWarmupCoverage.add(
+        state.postRampWarmup.revisionSeen && state.postRampWarmup.baselineSeen,
+      );
+    }
 
     for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
       probeRevisionCoverage.add(
@@ -876,6 +1014,26 @@ export default function () {
       }
 
       patchReceived.add(1);
+      if (POST_RAMP_WARMUP_FLAG_KEY) {
+        const warmupFlag = findFeatureFlag(
+          message.featureFlags,
+          POST_RAMP_WARMUP_FLAG_KEY,
+        );
+        if (warmupFlag) {
+          try {
+            recordPostRampWarmupPatch(
+              extractProbeSnapshot(warmupFlag),
+              state.postRampWarmup,
+            );
+          } catch (error) {
+            reportInvalid(
+              state,
+              `post-ramp warm-up flag '${POST_RAMP_WARMUP_FLAG_KEY}': ${error.message}`,
+            );
+          }
+        }
+      }
+
       for (const probeState of state.probes) {
         const probeFlag = findFeatureFlag(message.featureFlags, probeState.key);
         if (!probeFlag) {

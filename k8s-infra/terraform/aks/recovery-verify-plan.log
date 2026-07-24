@@ -1,0 +1,12 @@
+data.azurerm_resource_group.existing[0]: Reading...
+data.azurerm_resource_group.existing[0]: Read complete after 1s [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest]
+azurerm_container_registry.this: Refreshing state... [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerRegistry/registries/featbitloadtesting22793c56acr]
+azurerm_kubernetes_cluster.this: Refreshing state... [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerService/managedClusters/aks-featbit-load-testing]
+azurerm_role_assignment.acr_pull: Refreshing state... [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerRegistry/registries/featbitloadtesting22793c56acr/providers/Microsoft.Authorization/roleAssignments/2b165cf3-e52c-b51f-c962-8e2c61782f11]
+azurerm_kubernetes_cluster_node_pool.target: Refreshing state... [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerService/managedClusters/aks-featbit-load-testing/agentPools/featbit]
+azurerm_kubernetes_cluster_node_pool.loadgen: Refreshing state... [id=/subscriptions/5776697f-f76a-4a4a-9b42-ce2dbe5d7475/resourceGroups/featbit-devtest/providers/Microsoft.ContainerService/managedClusters/aks-featbit-load-testing/agentPools/loadgen]
+
+No changes. Your infrastructure matches the configuration.
+
+Terraform has compared your real infrastructure against your configuration
+and found no differences, so no changes are needed.

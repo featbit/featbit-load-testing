@@ -16,13 +16,16 @@ JSON 与 HTML 报告。
 2. 使用固定 Helm chart 部署本地 FeatBit。
 3. 获取同一个 FeatBit environment 的 Server SDK secret 和 OpenAPI token。
 4. 配置 k6 streaming target 与 REST controller。
-5. 先运行 smoke，再运行 baseline，最后按需运行 growth；每轮自动重建该 Profile 的 probe flags。
+5. 本地依次运行 smoke、baseline、baseline-plus；growth 和 growth-plus 必须转到 AKS。
+   每轮自动重建该 Profile 的 probe flags。
 6. 查看实时 Dashboard，并从 `results/` 读取最终报告。
 
 所有命令都从仓库根目录、使用 PowerShell 7 执行。
 
-让 Codex 代跑时，只需说明 `smoke`、`baseline` 或 `growth` 以及本轮 Note。Codex 负责执行命令、
-记录 `RUN_ID`、监控运行并收集报告；不会要求你手工创建、修改或复原 feature flags。
+让 Codex 代跑时，只需说明 `smoke`、`baseline`、`baseline-plus`、`growth` 或
+`growth-plus` 以及本轮 Note。
+Codex 负责执行命令、记录 `RUN_ID`、监控运行并收集报告；不会要求你手工创建、修改或复原
+feature flags。
 
 ## 当前本地拓扑
 
@@ -161,15 +164,22 @@ kubectl --context docker-desktop -n featbit port-forward service/featbit-els 301
 不要手工创建或修改 probe flags。`run-test.ps1` 会在创建 TestRun 前调用
 `prepare-probe-flags.ps1`，在 controller 配置指向的 environment 中按 Profile 精确重建它们：
 
-| Profile | 自动创建的 flag keys | 数量 | 连接数 | 建连速率 | Stabilization | Hold |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `smoke` | `loadtest-sync-probe-01` | 1 | 10 | 1/s | 10s | 180s |
-| `baseline` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-10` | 10 | 1,000 | 10/s | 30s | 600s |
-| `growth` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-20` | 20 | 5,000 | 50/s | 30s | 600s |
+| Profile | 自动创建的 flag keys | 预置数量 | 被测/变更数量 | 连接数 | 建连速率 | Stabilization | Hold |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `smoke` | `loadtest-sync-probe-01` | 1 | 1 | 10 | 1/s | 10s | 180s |
+| `baseline` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-10` | 10 | 1 | 1,000 | 10/s | 30s | 70s |
+| `baseline-plus` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-10` | 10 | 1 | 3,000 | 30/s | 30s | 70s |
+| `growth` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-20` | 20 | 1 | 10,000 | 100/s | 30s | 600s |
+| `growth-plus` | `loadtest-sync-probe-01` 至 `loadtest-sync-probe-20` | 20 | 1 | 20,000 | 200/s | 30s | 600s |
 
-runner 资源按 Profile 分配：smoke/baseline 使用 `512Mi` memory request 与 `4Gi` limit；growth
-使用 `4Gi` request 与 `8Gi` limit，以容纳 5,000 个独立 k6 VU、WebSocket 状态和 20 个 probe
-flag 的同步峰值。调度前请确保节点至少能满足该 request。
+当预置数量大于被测数量时，渲染器会自动把紧接在被测 flags 后的一个 flag 保留为
+`POST_RAMP_WARMUP_FLAG_KEY`。因此 baseline、baseline-plus、growth 和 growth-plus 都使用
+flag-02 在所有连接建立后执行不计分的 `baseline -> rev-001 -> baseline` 广播预热，正式样本
+仍只来自 flag-01。smoke 没有额外 flag，默认禁用这一步。
+
+runner 资源按 Profile 分配：smoke/baseline 使用 `512Mi` memory request 与 `4Gi` limit；
+baseline-plus 使用 `2Gi / 6Gi`。AKS growth 每 runner 使用 `4Gi / 8Gi`，growth-plus 使用
+`6Gi / 10Gi`；两者禁止由本地单 runner 执行。
 
 每轮 provision 会：
 
@@ -294,27 +304,36 @@ smoke 自然结束并通过后运行 baseline：
   -Note "baseline configuration A"
 ```
 
-该轮会先把 smoke 的 flag 集合重建为 10 个 canonical flags，再建立 1,000 条连接。ramp-up 为
-100 秒，随后稳定 30 秒；measured hold 为 `T+130s` 至 `T+730s`，drain 在 `T+740s` 结束。
-预期 `controller_warmup_updates == 20`、`controller_revision_updates == 20`。
+该轮重建并保留 10 个 canonical flags，但 `PROBE_FLAG_KEYS` 只包含
+`loadtest-sync-probe-01`；controller 仅预热和变更该 flag，`02` 至 `10` 全程保持
+`baseline`。测试建立 1,000 条连接，ramp-up 为 100 秒，随后稳定 30 秒；measured hold 为
+`T+130s` 至 `T+200s`，drain 在 `T+210s` 结束。预期
+`controller_warmup_updates == 2`、`controller_revision_updates == 2`。双 runner AKS 还包含
+60 秒 setup barrier 与 30 秒 teardown grace，因此计划墙钟时间约为 5 分钟。
 
-### Growth
+### Baseline Plus
 
-baseline 自然结束并通过后运行 growth：
+baseline 通过后可运行中间档：
 
 ```powershell
 .\k8s-infra\scripts\run-test.ps1 `
-  -Profile growth `
-  -Note "growth configuration A"
+  -Profile baseline-plus `
+  -Note "baseline plus configuration A"
 ```
 
-该轮会重建为 20 个 canonical flags，再建立 5,000 条连接。ramp-up 同样为 100 秒，随后稳定
-30 秒；measured hold 为 `T+130s` 至 `T+730s`，drain 在 `T+740s` 结束。预期
-`controller_warmup_updates == 40`、`controller_revision_updates == 40`。
+该轮同样预置 10 个 canonical flags、只变更 `loadtest-sync-probe-01`，但建立 3,000 条连接；
+全局 ramp 为 30/s，仍在 100 秒达到目标。measured hold 保持 `T+130s` 至 `T+200s`，
+AKS 计划墙钟时间约 5 分钟。预期
+`controller_warmup_updates == 2`、`controller_revision_updates == 2`。
 
-运行 growth 前确认 Docker Desktop 为 5,000 条 WebSocket 和三个 ELS Pod 留有足够 CPU/内存；
-growth runner 会请求 `4Gi`、限制为 `8Gi`。资源不足导致的运行属于本地环境瓶颈，不能直接
-当作 FeatBit 容量结论。
+### Growth / Growth Plus
+
+两者都是 AKS-only profile。`run-test.ps1` 会明确拒绝本地执行，避免 10,000/20,000 条连接
+落到同一个 Docker Desktop runner。请改用 [AKS 运行指南](README-AKS.md)：
+
+- growth：10,000 条连接、至少 5 个 runner；
+- growth-plus：20,000 条连接、至少 10 个 runner；
+- 都预置 20 个 flags，只测 flag-01，并用 flag-02 做满连接后预热。
 
 ### 后台提交
 
@@ -390,16 +409,20 @@ results/<run-id>-report.html
 `summary.json` 和 runner Job 的退出状态是 Pass/Fail 依据；HTML 用于查看时间序列。重点确认：
 
 - `controller_warmup_updates == probe flag 数量 x 2`；
+- 启用满连接预热时，每个 runner 的 `post_ramp_warmup_coverage == 100%`；
 - `controller_revision_updates == probe flag 数量 x 2`；
 - 每个 `probe_revision_coverage{revision_index:*}` 为 100%；
 - `probe_sync_latency_ms{revision_index:*}` 的 p95 `<500ms`、p99 `<1000ms`；
+- `probe_sync_over_60ms`、`probe_sync_over_80ms`、`probe_sync_over_100ms` 给出正式样本的
+  精确尾延迟比例；
 - `initial_sync_success`、`connection_survived`、`final_applied_revision_success` 为 100%；
 - `controller_api_error`、`websocket_error`、`heartbeat_timeout`、
   `revision_sequence_error`、`unexpected_revision` 为 0。
 
 `controller_api_latency_ms` 会同时包含 setup、预热、正式更新和 teardown 的 GET/PUT/验证请求，
-因此它的 aggregate max 可能正好是被预热吸收的冷请求。正式 flag 传播延迟应看按
-`revision_index` 拆分的 `probe_sync_latency_ms`。
+因此它的 aggregate max 可能正好是被预热吸收的冷请求。`post_ramp_warmup_latency_ms` 记录
+满连接后但不计分的广播；正式 flag 传播延迟应看按 `revision_index` 拆分的
+`probe_sync_latency_ms`。
 
 ## 10. 重跑、停止与清理
 

@@ -114,6 +114,10 @@ resource "azurerm_kubernetes_cluster" "this" {
     outbound_type       = "loadBalancer"
   }
 
+  # Keep the managed Prometheus profile that the AKS load-test workflow uses
+  # for historical per-node and per-container resource evidence.
+  monitor_metrics {}
+
   dynamic "api_server_access_profile" {
     for_each = length(var.api_server_authorized_ip_ranges) > 0 ? [1] : []
 

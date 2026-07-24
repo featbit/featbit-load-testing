@@ -16,13 +16,18 @@ Deployment runbooks:
 
 `Ramp rate` means new WebSocket connections per second.
 
-| Profile | Run location | Ramp rate | Total connections | Probe flags | Hold time |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Smoke | Local workstation, then remote load generator | 1/s | 10 | 1 | 3 minutes |
-| Baseline | Remote load generator | 10/s | 1,000 | 10 | 10 minutes |
-| Growth | Remote load generator | 50/s | 5,000 | 20 | 10 minutes |
+| Profile | Run location | Ramp rate | Total connections | Provisioned flags | Changed/measured flags | Hold time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Smoke | Local workstation, then remote load generator | 1/s | 10 | 1 | 1 | 3 minutes |
+| Baseline | Remote load generator | 10/s | 1,000 | 10 | 1 | 70 seconds |
+| Baseline Plus | Remote load generator | 30/s | 3,000 | 10 | 1 | 70 seconds |
+| Growth | AKS only | 100/s | 10,000 | 20 | 1 | 10 minutes |
+| Growth Plus | AKS only | 200/s | 20,000 | 20 | 1 | 10 minutes |
 
-Both Baseline and Growth take 100 seconds to reach their target connection count.
+Baseline, Baseline Plus, Growth, and Growth Plus each take 100 seconds to reach their target
+connection count. Growth requires at least five AKS runners; Growth Plus requires at least ten.
+Both change and measure only `loadtest-sync-probe-01`; flag `02` is reserved for the unmeasured
+post-ramp warm-up.
 
 ## 1. Create the probe flags
 
@@ -32,7 +37,9 @@ Create these String feature flags in the FeatBit Cloud environment under test:
 | --- | --- |
 | Smoke | `loadtest-sync-probe-01` |
 | Baseline | `loadtest-sync-probe-01` through `loadtest-sync-probe-10` |
+| Baseline Plus | `loadtest-sync-probe-01` through `loadtest-sync-probe-10` |
 | Growth | `loadtest-sync-probe-01` through `loadtest-sync-probe-20` |
+| Growth Plus | `loadtest-sync-probe-01` through `loadtest-sync-probe-20` |
 
 Configure every probe flag as follows:
 
@@ -88,47 +95,80 @@ Measured hold: `T+20s` through `T+200s`.
 
 ### Baseline
 
+Keep all 10 Baseline flags in the environment. Only `loadtest-sync-probe-01` is included in
+`PROBE_FLAG_KEYS`, so the measured controller changes that one flag while flags `02` through `10`
+remain at `baseline`.
+
 ```powershell
-$env:PROBE_FLAG_KEYS = ((1..10) | ForEach-Object { "loadtest-sync-probe-{0:D2}" -f $_ }) -join ","
+$env:PROBE_FLAG_KEYS = "loadtest-sync-probe-01"
 $env:MAX_CONNECTIONS = "1000"
 $env:CONNECTIONS_PER_SECOND = "10"
 $env:STABILIZATION_SECONDS = "30"
 $env:INITIAL_SYNC_TIMEOUT_SECONDS = "20"
-$env:HOLD_DURATION_SECONDS = "600"
+$env:HOLD_DURATION_SECONDS = "70"
 $env:DRAIN_DURATION_SECONDS = "10"
 
 New-Item -ItemType Directory -Force .\results | Out-Null
 k6 run --summary-export .\results\baseline-summary.json .\k6\server-streaming.js
 ```
 
-Measured hold: `T+130s` through `T+730s`.
+Measured hold: `T+130s` through `T+200s`.
 
-### Growth
+### Baseline Plus
+
+Baseline Plus keeps the same 10 provisioned flags and only changes/measures
+`loadtest-sync-probe-01`. It increases the connection target to 3,000 and the global ramp rate to
+30/s.
 
 ```powershell
-$env:PROBE_FLAG_KEYS = ((1..20) | ForEach-Object { "loadtest-sync-probe-{0:D2}" -f $_ }) -join ","
-$env:MAX_CONNECTIONS = "5000"
-$env:CONNECTIONS_PER_SECOND = "50"
+$env:PROBE_FLAG_KEYS = "loadtest-sync-probe-01"
+$env:MAX_CONNECTIONS = "3000"
+$env:CONNECTIONS_PER_SECOND = "30"
 $env:STABILIZATION_SECONDS = "30"
 $env:INITIAL_SYNC_TIMEOUT_SECONDS = "20"
-$env:HOLD_DURATION_SECONDS = "600"
+$env:HOLD_DURATION_SECONDS = "70"
 $env:DRAIN_DURATION_SECONDS = "10"
 
 New-Item -ItemType Directory -Force .\results | Out-Null
-k6 run --summary-export .\results\growth-summary.json .\k6\server-streaming.js
+k6 run --summary-export .\results\baseline-plus-summary.json .\k6\server-streaming.js
 ```
 
-Measured hold: `T+130s` through `T+730s`.
+Measured hold: `T+130s` through `T+200s`.
+
+### Growth and Growth Plus
+
+These profiles are AKS-only. Do not run 10,000 or 20,000 connections in one local k6 Pod.
+Render them through the guarded AKS workflow:
+
+```powershell
+.\k8s-infra\scripts\render-aks-testrun.ps1 `
+  -Profile growth `
+  -KubeContext $aksContext `
+  -RunnerImage $runnerImage `
+  -Parallelism 5
+
+.\k8s-infra\scripts\render-aks-testrun.ps1 `
+  -Profile growth-plus `
+  -KubeContext $aksContext `
+  -RunnerImage $runnerImage `
+  -Parallelism 10
+```
+
+The second command requires at least ten isolated loadgen nodes. See
+[`README-AKS.md`](k8s-infra/README-AKS.md) for resource monitoring and result collection.
 
 ## 4. Control the flags during the measured hold
 
 Docker Desktop Kubernetes runs use the REST controller documented in
 [`k8s-infra/README.md`](k8s-infra/README.md). With `AUTO_CONTROL_REVISIONS=true`, the
-single local runner—or runner 1 in the distributed AKS profile—restores every probe flag to
-`baseline` in `setup()`, applies
+single local runner—or runner 1 in the distributed AKS profile—restores every flag listed in
+`PROBE_FLAG_KEYS` to `baseline` in `setup()`, applies
 an unmeasured `baseline -> rev-001 -> baseline` warm-up before any WebSocket is
-opened, applies `rev-001` and then `rev-002` during the measured hold, and restores
-`baseline` in `teardown()`. No manual flag changes are required.
+opened, and then applies `rev-001` and `rev-002` during the measured hold. When
+`POST_RAMP_WARMUP_FLAG_KEY` names a separate unmeasured flag, it also performs a second
+`baseline -> rev-001 -> baseline` warm-up after all WebSockets are established and before
+the measured revisions. It restores all controlled flags to `baseline` in `teardown()`.
+No manual flag changes are required.
 
 For a direct k6 run without the REST controller, use the following manual process.
 
@@ -136,9 +176,9 @@ Before starting, confirm that every probe flag serves `baseline` to 100%.
 
 Wait until k6 prints the `measured hold` line, then perform these two rounds in FeatBit Cloud:
 
-1. Change every probe flag in the selected profile from `baseline` to `rev-001`, saving each flag.
+1. Change every flag listed in `PROBE_FLAG_KEYS` from `baseline` to `rev-001`, saving each flag.
 2. Wait at least 30 seconds after the last save.
-3. Change every probe flag from `rev-001` to `rev-002`, saving each flag.
+3. Change the same flags from `rev-001` to `rev-002`, saving each flag.
 4. Leave the flags unchanged and let k6 finish naturally.
 
 Each WebSocket must receive this sequence for every configured flag:

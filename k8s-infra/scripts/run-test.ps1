@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("smoke", "baseline", "growth")]
+    [ValidateSet("smoke", "baseline", "baseline-plus", "growth", "growth-plus")]
     [string] $Profile = "smoke",
 
     [string] $Note = "",
@@ -17,7 +17,8 @@ function Get-TestProfile {
     switch ($Name.ToLowerInvariant()) {
         "smoke" {
             return [ordered]@{
-                ProbeFlagCount = 1
+                ProvisionedProbeFlagCount = 1
+                MeasuredProbeFlagCount = 1
                 MaxConnections = 10
                 ConnectionsPerSecond = 1
                 StabilizationSeconds = 10
@@ -26,32 +27,67 @@ function Get-TestProfile {
                 DrainDurationSeconds = 10
                 RunnerMemoryRequest = "512Mi"
                 RunnerMemoryLimit = "4Gi"
+                AksOnly = $false
             }
         }
         "baseline" {
             return [ordered]@{
-                ProbeFlagCount = 10
+                ProvisionedProbeFlagCount = 10
+                MeasuredProbeFlagCount = 1
                 MaxConnections = 1000
                 ConnectionsPerSecond = 10
                 StabilizationSeconds = 30
                 InitialSyncTimeoutSeconds = 20
-                HoldDurationSeconds = 600
+                HoldDurationSeconds = 70
                 DrainDurationSeconds = 10
                 RunnerMemoryRequest = "512Mi"
                 RunnerMemoryLimit = "4Gi"
+                AksOnly = $false
+            }
+        }
+        "baseline-plus" {
+            return [ordered]@{
+                ProvisionedProbeFlagCount = 10
+                MeasuredProbeFlagCount = 1
+                MaxConnections = 3000
+                ConnectionsPerSecond = 30
+                StabilizationSeconds = 30
+                InitialSyncTimeoutSeconds = 20
+                HoldDurationSeconds = 70
+                DrainDurationSeconds = 10
+                RunnerMemoryRequest = "2Gi"
+                RunnerMemoryLimit = "6Gi"
+                AksOnly = $false
             }
         }
         "growth" {
             return [ordered]@{
-                ProbeFlagCount = 20
-                MaxConnections = 5000
-                ConnectionsPerSecond = 50
+                ProvisionedProbeFlagCount = 20
+                MeasuredProbeFlagCount = 1
+                MaxConnections = 10000
+                ConnectionsPerSecond = 100
                 StabilizationSeconds = 30
                 InitialSyncTimeoutSeconds = 20
                 HoldDurationSeconds = 600
                 DrainDurationSeconds = 10
-                RunnerMemoryRequest = "4Gi"
-                RunnerMemoryLimit = "8Gi"
+                RunnerMemoryRequest = "8Gi"
+                RunnerMemoryLimit = "16Gi"
+                AksOnly = $true
+            }
+        }
+        "growth-plus" {
+            return [ordered]@{
+                ProvisionedProbeFlagCount = 20
+                MeasuredProbeFlagCount = 1
+                MaxConnections = 20000
+                ConnectionsPerSecond = 200
+                StabilizationSeconds = 30
+                InitialSyncTimeoutSeconds = 20
+                HoldDurationSeconds = 600
+                DrainDurationSeconds = 10
+                RunnerMemoryRequest = "16Gi"
+                RunnerMemoryLimit = "64Gi"
+                AksOnly = $true
             }
         }
         default {
@@ -166,13 +202,39 @@ if ($LASTEXITCODE -ne 0) {
 $repositoryRoot = Get-RepositoryRoot
 $profileName = $Profile.ToLowerInvariant()
 $profileConfig = Get-TestProfile -Name $profileName
-$probeFlagKeys = ((1..$profileConfig.ProbeFlagCount) | ForEach-Object {
+if ($profileConfig.AksOnly) {
+    throw (
+        "Profile '$profileName' is AKS-only. Use render-aks-testrun.ps1; " +
+        "a single Docker Desktop runner would invalidate this profile."
+    )
+}
+if (
+    $profileConfig.MeasuredProbeFlagCount -lt 1 -or
+    $profileConfig.MeasuredProbeFlagCount -gt $profileConfig.ProvisionedProbeFlagCount
+) {
+    throw (
+        "Profile '$profileName' must measure at least one probe flag and cannot " +
+        "measure more flags than it provisions."
+    )
+}
+$probeFlagKeys = ((1..$profileConfig.MeasuredProbeFlagCount) | ForEach-Object {
     "loadtest-sync-probe-{0:D2}" -f $_
 }) -join ","
+$postRampWarmupFlagKey = if (
+    $profileConfig.ProvisionedProbeFlagCount -gt $profileConfig.MeasuredProbeFlagCount
+) {
+    "loadtest-sync-probe-{0:D2}" -f ($profileConfig.MeasuredProbeFlagCount + 1)
+}
+else {
+    ""
+}
 
-Write-Host "Provisioning $($profileConfig.ProbeFlagCount) probe flag(s) for profile '$profileName' ..."
+Write-Host (
+    "Provisioning $($profileConfig.ProvisionedProbeFlagCount) probe flag(s) " +
+    "and measuring $($profileConfig.MeasuredProbeFlagCount) for profile '$profileName' ..."
+)
 & (Join-Path $PSScriptRoot "prepare-probe-flags.ps1") `
-    -ProbeFlagCount $profileConfig.ProbeFlagCount
+    -ProbeFlagCount $profileConfig.ProvisionedProbeFlagCount
 
 $gitSha = (& git -C $repositoryRoot rev-parse --short=8 HEAD 2>$null | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($gitSha)) {
@@ -193,6 +255,7 @@ $tokens = [ordered]@{
     "__RUN_ID__" = $runId
     "__PROFILE__" = $profileName
     "__PROBE_FLAG_KEYS__" = $probeFlagKeys
+    "__POST_RAMP_WARMUP_FLAG_KEY__" = $postRampWarmupFlagKey
     "__MAX_CONNECTIONS__" = $profileConfig.MaxConnections
     "__CONNECTIONS_PER_SECOND__" = $profileConfig.ConnectionsPerSecond
     "__STABILIZATION_SECONDS__" = $profileConfig.StabilizationSeconds
@@ -228,6 +291,7 @@ $metadata = [ordered]@{
     k6Image = $script:K6Image
     parameters = $profileConfig
     probeFlagKeys = $probeFlagKeys.Split(",")
+    postRampWarmupFlagKey = $postRampWarmupFlagKey
 }
 $metadata | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $metadataPath
 

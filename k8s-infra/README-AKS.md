@@ -31,36 +31,39 @@ Azure 中运行，并通过资源隔离和监控判断传播延迟来自负载�
 
 ## 结论先行
 
-AKS growth 使用独立的分布式基线，保持总连接数不变，同时固定 FeatBit 副本数和资源边界，
-消除本地负载机瓶颈：
+AKS growth 使用独立、分布式的负载生成器，并固定 FeatBit 副本数和资源边界：
 
-- `parallelism: 2`、`separate: true`，两个 runner 分别产生约 2,500 条 WebSocket 连接；
-- ELS 固定为 3 个副本，每个 `1 CPU` request/limit、`512Mi / 1Gi` memory
-  request/limit，HPA 关闭；
-- 两个 runner 分别独占一个 `Standard_D4ds_v5` loadgen 节点，每个使用
-  `3 CPU / 4Gi request`、`8Gi memory limit`，不设置 CPU limit；
+- growth 是 10,000 条连接、`parallelism >= 5`；推荐 p5 时每 runner 2,000 条；
+- growth-plus 是 20,000 条连接、`parallelism >= 10`；推荐 p10 时每 runner 2,000 条；
+- 两者均预置 20 个 flags，只测 flag-01；flag-02 用于满连接后不计分预热；
+- ELS 固定为 6 个副本，每个 `500m CPU / 256Mi` request、
+  `1 CPU / 512Mi` limit，HPA 关闭；
+- runner 分别独占带 taint 的 loadgen 节点，不设置 CPU limit；
 - FeatBit 和 runner 不共享节点；测量期间关闭自动扩缩容并停止部署；
 - 使用 ACR 中按 Git SHA 构建的不可变镜像，并记录最终 image digest；
 - 使用 Azure Files CSI 的 `ReadWriteMany` PVC 保存 JSON/HTML 结果；
 - 至少采集 runner、ELS、API、Redis、PostgreSQL 和节点级指标。
 
-本地 growth 首次运行中单 runner 内存峰值约为 `5.33 GiB`，同时 CPU 接近现有 `4 CPU`
-上限。把负载均分到两个节点后，预期每个 runner 约 2,500 VU；专用节点上不设置 CPU limit，
-避免 CFS throttling 人为抬高 `probe_sync_latency_ms`。
+历史 50k 实验中，5,000 连接单 runner 的内存峰值约为 `5.33 GiB`。20k growth-plus p10
+暂时继续使用
+`Standard_D4ds_v5` 与每 runner `6Gi` request、`10Gi` limit；D2 节点加上 DaemonSet/OS
+工作集后余量过小，不在同一轮容量拐点实验中同时更换 generator 规格。专用节点不设置
+CPU limit，避免 CFS throttling 人为抬高 `probe_sync_latency_ms`。
 
 ## 支持边界
 
 | 仓库内容 | AKS 可用性 | 迁移动作 |
 | --- | --- | --- |
-| `k6/server-streaming.js` 与 `k6/lib/` | 已支持两个 runner | runner 1 独占 controller，连接阈值按执行段计算 |
+| `k6/server-streaming.js` 与 `k6/lib/` | 已支持分布式 runner | runner 1 独占 controller，连接阈值按执行段计算 |
 | `k8s-infra/Dockerfile.k6` | 可复用 | 用 Git SHA tag 构建并固定 digest |
-| `k8s-infra/templates/testrun-aks.yaml` | AKS 参考模板 | 两个 runner、分离调度、唯一报告路径和 RWX PVC |
+| `k8s-infra/templates/testrun-aks.yaml` | AKS 参考模板 | 可配置 parallelism、分离调度、唯一报告路径和 RWX PVC |
 | `k8s-infra/manifests/aks-loadtest-base.yaml` | 可直接应用 | `featbit-loadtest` namespace、Azure Files RWX PVC、loadgen results-reader |
 | `k8s-infra/manifests/local-base.yaml` | 不可直接用 | RWO PVC 改为 Azure Files CSI RWX，并增加调度 |
 | `k8s-infra/values/featbit-local.yaml` | 不可直接用 | 删除 NodePort/本地数据组件假设，新增节点隔离和云端依赖 |
 | `k8s-infra/values/featbit-aks-internal.yaml` | 可用于临时 AKS | 内置 PostgreSQL/Redis、开放公网 LoadBalancer、target 节点调度，不用于生产 |
 | `bootstrap-aks.ps1`、target/controller/flag 配置脚本 | AKS 可用 | 必须显式传入目标 `-KubeContext` |
-| `bootstrap.ps1`、`run-test.ps1`、`collect-results.ps1` | 当前仅本地 | 保留 Docker Desktop 保护；AKS render/run/collect 尚待补齐 |
+| `bootstrap.ps1`、`run-test.ps1`、`collect-results.ps1` | 当前仅本地 | 保留 Docker Desktop 保护；growth/growth-plus 会拒绝本地单 runner |
+| `render-aks-testrun.ps1`、`monitor-aks-testrun.ps1`、`collect-results-aks.ps1` | AKS 可用 | 渲染、资源峰值采样和完整证据归档 |
 | `k8s-infra/terraform/aks/` | 可用 | 创建/销毁临时 AKS、ACR 与 system/featbit/loadgen 节点池 |
 
 本地电脑或 Azure Cloud Shell 可以继续充当轻量控制端，执行 `az`、`helm` 和 `kubectl`；
@@ -79,11 +82,11 @@ flowchart LR
         subgraph Target[featbit 节点池]
             UI[FeatBit UI]
             API[FeatBit API]
-            ELS[FeatBit ELS x3]
+            ELS[FeatBit ELS x6]
         end
         subgraph Loadgen[loadgen 节点池]
             K6O[k6 Operator]
-            Runner[k6 runner x2]
+            Runner[k6 runner x5 / x10]
             Results[results-reader]
         end
         Files[(Azure Files RWX PVC)]
@@ -112,29 +115,24 @@ quota 必须在目标 region 中先确认。
 | 节点池 | 示例 | 数量 | 用途 |
 | --- | --- | ---: | --- |
 | `system` | `Standard_D2ds_v5` | 1 | 临时集群的 CoreDNS、CSI 等系统组件 |
-| `featbit` | `Standard_D4ds_v5` | 2 | UI、API、3 个 ELS 及临时 PG/Redis；与 runner 隔离 |
-| `loadgen` | `Standard_D4ds_v5` | 2 | 两个 k6 runner，一节点一个 |
+| `featbit` | `Standard_D4ds_v5` | 3 | UI、API、6 个 ELS 及临时 PG/Redis；与 runner 隔离 |
+| `loadgen` | `Standard_D4ds_v5` | 6 / 10 | growth 可用现有 6 节点；growth-plus 扩为 10，一节点一个 runner |
 
 首次 AKS 对照跑使用以下工作负载配置：
 
 | 组件 | 副本 | Request | Limit | 说明 |
 | --- | ---: | --- | --- | --- |
-| ELS | 3 | `1 CPU / 512Mi` | `1 CPU / 1Gi` | 固定 CPU 边界，HPA 关闭 |
+| ELS | 6 | `500m / 256Mi` | `1 CPU / 512Mi` | 三个 target 节点严格 `2 + 2 + 2`，HPA 关闭 |
 | API | 1 | `100m / 256Mi` | `500m / 1Gi` | 与本地配置一致 |
 | UI | 1 | `100m / 128Mi` | `500m / 512Mi` | 不在测量数据面上 |
 | 内置 PostgreSQL | 1 | `1 CPU / 2Gi` | 仅 `4Gi` memory | 无 CPU limit，`32Gi managed-csi-premium` |
 | 内置 Redis | 1 | `1 CPU / 1Gi` | 仅 `2Gi` memory | 无 CPU limit，`8Gi managed-csi-premium` |
-| growth runner | 2 | 每个 `3 CPU / 4Gi` | 每个仅 `8Gi` memory | 无 CPU limit，一节点一个 |
+| growth runner | >=5 | 每个 `2 CPU / 4Gi` | 每个仅 `8Gi` memory | p5 时 2,000 连接/runner |
+| growth-plus runner | >=10 | 每个 `3 CPU / 6Gi` | 每个仅 `10Gi` memory | p10 时 2,000 连接/runner |
 
-三个 ELS 是 Pod 副本数，不代表必须购买三个 target 节点；两个 D4 节点会形成 `2 + 1` 的
-ELS 分布。只有测试契约要求一 Pod 一节点或三个 failure domain 时，才把
-`target_node_count` 改为 3。UI/API 的资源需求很小，它们共享 target pool，不单独购买节点。
-默认 target 与 loadgen 都是 2 个 D4，分别提供 8 vCPU/32 GiB 的节点总量。两个 runner 已把
-本地测得的约 4 CPU/5.33 GiB 峰值分散开；在指标证明 loadgen 节点仍饱和前，不需要先上四个
-runner 或 D16。内置依赖 Profile 的 FeatBit 工作负载 request 合计约 `5.2 CPU / 4.9Gi`，
-在 target pool 上仍留有节点和 DaemonSet 余量；实际判断以 `Allocatable` 和 Pod placement
-为准。如果 Pod 因实际 Allocatable 不足而 Pending，应把 `target_node_count` 提到 3，而不是
-降低 PG/Redis request 后继续宣称依赖侧有余量。
+6 个 ELS 通过 `topologySpreadConstraints` 在三个 target 节点上严格形成 `2 + 2 + 2`。
+UI/API 与内置依赖共享 target pool，但不与 runner 共享节点。实际容量判断以
+`Allocatable`、Pod placement 和 15 秒采样的容器峰值为准。
 
 ### VM 价格快照
 
@@ -148,10 +146,10 @@ USD；月价按 730 小时计算。实际账单受协议折扣、税费和 regio
 | `Standard_D8ds_v5` | $0.620 | $452.60 | $0.564 | $411.72 |
 | `Standard_D16ds_v5` | $1.240 | $905.20 | $1.128 | $823.44 |
 
-默认五节点拓扑的 VM 合计约为 East Asia `$1.395/小时`、Southeast Asia `$1.269/小时`；
-运行两小时约 `$2.79 / $2.54`。这不包含磁盘、Load Balancer/Public IP、ACR、Azure Files、
-监控、数据库、Redis、流量和 AKS Standard tier。Terraform 默认使用 AKS Free tier 和 ACR
-Basic。可随时运行
+当前 growth 拓扑（1 个 D2 + 9 个 D4）的 VM 合计约为 East Asia `$2.945/小时`；
+growth-plus 将 loadgen 扩至 10 后（1 个 D2 + 13 个 D4）约 `$4.185/小时`。这不包含磁盘、
+Load Balancer/Public IP、ACR、Azure Files、监控、数据库、Redis、流量和 AKS Standard tier。
+Terraform 默认使用 AKS Free tier 和 ACR Basic。可随时运行
 [`get-vm-prices.ps1`](terraform/aks/get-vm-prices.ps1) 获取最新价格。
 
 ## 测试不变量
@@ -161,17 +159,17 @@ Basic。可随时运行
 1. 使用专门的 FeatBit project/environment 和 `loadtest-sync-probe-*` flags。
 2. Server SDK secret 与 OpenAPI access token 必须属于同一个 environment。
 3. 同一 environment 同一时间只有一个 Pending 或 Running 的 TestRun。
-4. AKS Profile 固定 `parallelism: 2`、`separate: true`，且 loadgen 节点数也是 2。
+4. AKS Profile 固定 `separate: true`；growth 至少 p5，growth-plus 至少 p10，loadgen
+   节点数必须不小于 parallelism。
 5. 测量期间固定节点数、Pod 副本数和 HPA 状态，不执行升级、部署或节点维护。
 6. 所有节点与外部依赖保持时钟同步。该测试用 flag payload 的 `updatedAt` 计算传播延迟。
 7. 记录 AKS 版本、节点 SKU/数量、Helm chart 版本、镜像 digest 和所有资源配额。
 8. 让测试自然结束并收集报告；强制终止可能跳过 `teardown()` 的 baseline 恢复。
 
-分布式运行只有 runner 1 操作 flags。自动预热发生在 WebSocket 建连前：其 `setup()` 执行
-`baseline -> rev-001 -> baseline`，然后才开始建立连接。它能预热 API、Redis 和 ELS 的
-控制路径。两个 runner 都等待同一个 60 秒 setup barrier 后才开始 ramp；如果预热超过该窗口，
-该轮直接失败。结束时 runner 1 再等待 30 秒，让 runner 2 完成 drain，之后才恢复 baseline。
-这个过程不会预热 5,000 条连接上的 fan-out，报告中不要把它描述为满连接预热。
+分布式运行只有 runner 1 操作 flags。`setup()` 先预热 API/Redis/ELS 控制路径；所有 runner
+等待同一个 60 秒 setup barrier 后开始 ramp。全部连接建立并 stabilization 后，runner 1 再用
+flag-02 执行一次不计分的 `baseline -> rev-001 -> baseline` fan-out，所有连接覆盖成功后才
+变更计分的 flag-01。结束时 runner 1 等待 30 秒让其他 runner drain，再恢复 baseline。
 
 ## 1. 前置条件
 
@@ -627,15 +625,16 @@ $testRunFile
 
 该脚本只执行只读检查、写入本地 `results/<run-id>-testrun.yaml` 和 metadata，并使用
 `kubectl apply --dry-run=server` 验证 CRD；它不会在集群中创建 TestRun、Job 或 runner Pod。
-必须先在 AKS 完成 smoke，再以相同命令依次渲染 baseline 和 growth，不能因为本地测试通过
-就跳过 AKS smoke/baseline。
+必须先在 AKS 完成 smoke，再以相同命令依次渲染 baseline、baseline-plus、growth 和
+growth-plus，不能因为本地测试通过就跳过 AKS 的较低档位。growth 使用
+`-Parallelism 5`；growth-plus 使用 `-Parallelism 10`，并会在 loadgen 节点不足时拒绝渲染。
 
 渲染后的关键配置为：
 
 ```yaml
 spec:
-  parallelism: 2
-  # k6 Operator 为两个 runner 加 required pod anti-affinity。
+  parallelism: <profile parallelism>
+  # k6 Operator 为 runner 加 required pod anti-affinity。
   separate: true
 
   initializer:
@@ -676,17 +675,17 @@ spec:
         effect: NoSchedule
     resources:
       requests:
-        cpu: "3"
-        memory: 4Gi
+        cpu: "<profile request>"
+        memory: <profile request>
       limits:
-        memory: 8Gi
+        memory: <profile limit>
     env:
       - name: FEATBIT_STREAMING_URL
         value: ws://featbit-els.featbit.svc.cluster.local:5100
       - name: FEATBIT_API_URL
         value: http://featbit-api.featbit.svc.cluster.local:5000
       - name: LOADTEST_PARALLELISM
-        value: "2"
+        value: "<parallelism>"
       - name: DISTRIBUTED_SETUP_BARRIER_SECONDS
         value: "60"
       - name: DISTRIBUTED_TEARDOWN_GRACE_SECONDS
@@ -694,17 +693,17 @@ spec:
     # 专用节点不设 CPU limit；保留 envFrom、securityContext、volumeMounts 和 volumes。
 ```
 
-k6 Operator `1.5.0` 把 runner hostname 固定为 `<testrun>-1`、`<testrun>-2`，先让两个 runner
-保持 paused，再由 starter 协调启动。脚本据此只让 runner 1 执行预热、revision controller
-和 teardown；连接目标阈值则按两个执行段各 2,500 计算。两个 setup 都补齐到 60 秒，保证
-预热完成后再开始 ramp；预热超时会使该轮 Invalid。
+k6 Operator `1.5.0` 把 runner hostname 固定为 `<testrun>-1` 至
+`<testrun>-<parallelism>`，先让 runner 保持 paused，再由 starter 协调启动。脚本据此只让
+runner 1 执行预热、revision controller 和 teardown；连接目标阈值按 parallelism 均分。
+每个 setup 都补齐到 60 秒，保证控制路径预热完成后再开始 ramp；预热超时会使该轮 Invalid。
 runner 1 在 teardown 前额外等待 30 秒，避免提前恢复 baseline。模板通过 Pod 名称生成各自的
 `*-summary.json` 和 `*-report.html`，避免 RWX 文件冲突。
 
-两个 runner 的 percentile 不是一个自动合并的全局 percentile。每个 runner 都必须通过阈值，
+各 runner 的 percentile 不是一个自动合并的全局 percentile。每个 runner 都必须通过阈值，
 因此相同连接数下的 SLO gate 仍然成立；如果报告需要一个精确的全局 percentile 数值，再从
 Prometheus/原始时序输出聚合。分布式模式不在 runner 2 上要求 controller 计数；API 错误会
-主动 abort，而两个 runner 的 revision coverage/final revision 阈值共同验证更新确实传播。
+主动 abort，而所有 runner 的 revision coverage/final revision 阈值共同验证更新确实传播。
 渲染脚本已经用当前集群的 CRD 验证以下字段。只有排查 CRD 版本时，才需要单独执行：
 
 ```powershell
@@ -719,11 +718,22 @@ kubectl --context $aksContext explain testrun.spec.runner.resources
 - `runner.image` 是 ACR `@sha256:` digest，而不是可变 tag；
 - `initializer.image` 与 `runner.image` 是完全相同的 ACR digest，确保 initializer 能读取
   `/tests/k6/server-streaming.js`；
-- `parallelism: 2`、`separate: true`；
+- `parallelism` 等于本轮显式传入的值、`separate: true`；
 - runner、starter 和 initializer 都要求 `workload: loadgen`；
 - runner 的 API/streaming URL 都是 `.svc.cluster.local`；
-- smoke/baseline runner request 为每个 `1 CPU / 512Mi`，growth 为每个
-  `3 CPU / 4Gi`；三者都没有 CPU limit。
+- smoke/baseline runner request 为每个 `1 CPU / 512Mi`，baseline-plus 为
+  `2 CPU / 2Gi`，growth 为 `2 CPU / 4Gi`，growth-plus 为 `3 CPU / 6Gi`；都没有 CPU
+  limit，memory limit 分别是 `4Gi / 4Gi / 6Gi / 8Gi / 10Gi`；
+- baseline 与 baseline-plus 都在 environment 中保留 10 个 probe flags：
+  `loadtest-sync-probe-01` 是唯一计分 flag；`loadtest-sync-probe-02` 在所有连接建立并完成
+  stabilization 后执行一次不计分的 `baseline -> rev-001 -> baseline` 广播预热，随后才变更
+  flag-01；其余 8 个始终保持 `baseline`。baseline 使用 1,000 条连接和 10/s ramp，
+  baseline-plus 使用 3,000 条连接和 30/s ramp；两者都是 70 秒 measured hold，加上 60 秒
+  setup barrier、30 秒 stabilization、10 秒 drain 和 30 秒 teardown grace，计划墙钟时间约为
+  5 分钟。
+- growth/growth-plus 都预置 20 个 flags，只计 flag-01，flag-02 做满连接预热；连接数与
+  ramp 分别为 `10,000 / 100/s` 和 `20,000 / 200/s`，hold 均为 600 秒，计划墙钟时间约
+  13.8 分钟。
 
 ## 9. 仓库适配清单
 
@@ -738,9 +748,11 @@ kubectl --context $aksContext explain testrun.spec.runner.resources
 - [ ] 增加显式确认后才 apply/wait 的 AKS run 脚本；当前按第 10–11 节人工 Gate 和提交。
 - [ ] 增加使用外部托管 PostgreSQL/Redis 的 `featbit-aks.yaml`，不包含任何 secret 值。
 - [x] `prepare-probe-flags.ps1` 接受显式 AKS context，并通过受控 API 地址管理 probe flags。
-- [ ] 结果收集支持 Azure Files RWX，并在删除 TestRun 前验证 JSON/HTML 均已复制。
+- [x] 结果收集支持 Azure Files RWX，并在删除 TestRun 前验证 JSON/HTML 均已复制。
 - [ ] 所有 `kubectl`/Helm 命令显式传递 context 和 namespace。
-- [ ] smoke 与 baseline 在 AKS 通过后才允许 growth。
+- [x] 资源采样脚本记录 FeatBit、runner 和节点的 CPU/内存峰值，并随 growth 结果归档。
+- [ ] smoke、baseline 与 baseline-plus 在 AKS 通过后才允许 growth；growth 通过后才允许
+  growth-plus。
 
 完成这些项以前，不要尝试通过临时删除 `Assert-LocalKubernetesContext` 来运行
 `run-test.ps1`。这会把镜像、PVC 和 service 假设一起带入 AKS。
@@ -752,19 +764,19 @@ kubectl --context $aksContext explain testrun.spec.runner.resources
 在第二个 PowerShell 保持第 6 节的 API port-forward 运行，然后在主窗口执行：
 
 ```powershell
-$probeFlagCount = @{
-  smoke = 1
-  baseline = 10
-  growth = 20
-}[$rendered.Profile]
+if ($null -eq $rendered -or $rendered.ProvisionedProbeFlagCount -lt 1) {
+  throw "Render the intended profile before preparing probe flags."
+}
 
 .\k8s-infra\scripts\prepare-probe-flags.ps1 `
   -KubeContext $aksContext `
   -ApiUrl "http://127.0.0.1:5000" `
-  -ProbeFlagCount $probeFlagCount
+  -ProbeFlagCount $rendered.ProvisionedProbeFlagCount
 ```
 
-看到 `Prepared <n> canonical probe flag(s) in baseline state.` 后关闭 port-forward。该脚本会在
+baseline 应看到 `Prepared 10 canonical probe flag(s) in baseline state.`；这只是保证环境中
+保留 10 个 flags，实际被 controller 变更的数量由渲染进 TestRun 的
+`PROBE_FLAG_KEYS` 决定。看到成功输出后关闭 port-forward。该脚本会在
 变更 flags 前拒绝任何仍为 Pending/Running/Unknown 的负载测试 Pod。
 
 每轮执行并保存以下检查结果：
@@ -800,9 +812,9 @@ Gate 必须全部满足：
 
 ## 11. 执行、监控与收集
 
-仓库适配完成后，运行顺序仍然是 smoke → baseline → growth。每轮创建唯一 RUN_ID，先保存
-渲染后的 TestRun YAML，再提交。必须复用第 8 节 `$rendered` 返回的 ID 和路径；不要重新用
-当前时间手工拼接另一个文件名，因为该文件并不存在：
+仓库适配完成后，运行顺序是 smoke → baseline → baseline-plus → growth → growth-plus。
+每轮创建唯一 RUN_ID，先保存渲染后的 TestRun YAML，再提交。必须复用第 8 节
+`$rendered` 返回的 ID 和路径；不要重新用当前时间手工拼接另一个文件名，因为该文件并不存在：
 
 ```powershell
 $runId = $rendered.RunId
@@ -822,9 +834,28 @@ if ($LASTEXITCODE -ne 0) {
   throw "TestRun submission failed."
 }
 
-kubectl --context $aksContext -n featbit-loadtest `
-  get testrun $testRunName -w
+$resourceMonitor = Start-Process pwsh `
+  -WindowStyle Hidden `
+  -PassThru `
+  -ArgumentList @(
+    "-NoProfile",
+    "-File", (Resolve-Path ".\k8s-infra\scripts\monitor-aks-testrun.ps1").Path,
+    "-RunId", $runId,
+    "-KubeContext", $aksContext,
+    "-SampleIntervalSeconds", "15",
+    "-TimeoutMinutes", "30"
+  )
+
+kubectl --context $aksContext -n featbit-loadtest get testrun $testRunName -w
 ```
+
+growth 和 growth-plus 必须启动资源监控；缺少
+`<run-id>-resource-samples.jsonl` 或 `<run-id>-resource-summary.json` 会使收集结果的
+`complete` 为 `false`。监控进程每 15 秒采集：
+
+- featbit、loadgen、system 节点 CPU 与 working set；
+- `featbit` namespace 中 ELS、API、UI、PostgreSQL、Redis 容器；
+- `featbit-loadtest` namespace 中每个 runner 与辅助 Pod。
 
 `kubectl get -w` 只支持一种资源类型，不能 watch `jobs,pods` 组合。在第二个 PowerShell
 窗口单独观察 runner Pod；需要时另取 Job 快照：
@@ -850,16 +881,58 @@ kubectl --context $aksContext -n featbit-loadtest `
 - PostgreSQL CPU、连接、I/O 和慢查询；
 - AKS 节点 CPU、内存、网络、磁盘、conntrack 与 Kubernetes Warning events。
 
-TestRun 自然完成后，先复制并校验：
+TestRun 的 `status.stage` 变成 `finished` 后，用收集脚本复制并校验结果。`-RunId` 不包含
+`featbit-` 前缀；新 PowerShell 窗口可直接执行：
 
-- 两个 runner 各自的 `*-summary.json`；
-- 两个 runner 各自的 `*-report.html`；
-- 渲染后的 TestRun YAML；
-- Helm values、chart/app 版本、image digest 和节点池快照；
-- 同一时间窗的监控截图或导出数据。
+```powershell
+$aksContext = "aks-featbit-load-testing"
+$runId = "smoke-20260723-153511-5d125acc-cbab"
 
-确认结果已落地到仓库外的持久归档后，才删除该轮 TestRun。中止、runner OOM、节点漂移、
+$collected = .\k8s-infra\scripts\collect-results-aks.ps1 `
+  -RunId $runId `
+  -KubeContext $aksContext
+
+$collected | Format-List
+Invoke-Item $collected.ArchiveDirectory
+```
+
+也可以追加 `-OpenReports`，在复制校验成功后直接打开两个 HTML 报告。脚本会：
+
+- 要求 TestRun 已自然到达 `finished`，且每个 runner Job 都是 `Complete`；
+- 要求每个 runner 恰好有一份 `*-summary.json` 和一份 `*-report.html`；
+- 比对 PVC 远端文件与本地副本的 SHA-256；
+- 保存 TestRun/Job/Pod 快照、事件、各 Job 日志、渲染后的 YAML 与 metadata；
+- 对 growth/growth-plus 要求资源 samples/summary 完整，并把容器/节点峰值一并归档；
+- 生成 `collection.json` 和 `checksums.sha256`，但不会删除任何集群资源。
+
+如果 TestRun 已是 `finished`，但 runner 因 k6 阈值失败而成为 `Failed`，先保留现场，再用诊断
+模式收集全部 runner 报告：
+
+```powershell
+$collected = .\k8s-infra\scripts\collect-results-aks.ps1 `
+  -RunId $runId `
+  -KubeContext $aksContext `
+  -AllowFailedRunners
+```
+
+该开关只接受已经处于 `Failed` 的 runner Job，不会把仍在运行的 Job 当成完成。归档中的
+`collection.json.complete` 仍会因为 threshold failure 保持 `false`，所以不会把性能失败误报
+为有效通过。
+
+默认归档目录是 `results\<runId>\`。只有 `collection.json` 中 `complete` 为 `true`，并且 Helm
+values、chart/app 版本、image digest、节点池快照和同一时间窗的监控数据也已复制到
+AKS/ACR 之外的持久归档后，才能删除该轮 TestRun。中止、runner OOM、节点漂移、
 autoscaling 或监控缺口都会使该轮结果成为 Invalid，而不是 FeatBit 性能失败。
+
+baseline、baseline-plus、growth 和 growth-plus 还必须确认：
+
+- 每个 runner 的 `post_ramp_warmup_coverage == 100%`，证明它负责的每条连接都收到 flag-02
+  的预热 revision 和恢复 baseline 两次 patch；
+- 正式样本只来自 `PROBE_FLAG_KEYS=loadtest-sync-probe-01`；
+- `probe_sync_over_60ms`、`probe_sync_over_80ms`、`probe_sync_over_100ms` 的 `value`
+  分别是正式样本超过对应延迟的精确比例，而不是从 p95/p99 估算的区间；
+- `post_ramp_warmup_latency_ms` 只描述被排除的预热广播，不能混入正式
+  `probe_sync_latency_ms`。
 
 ## 12. 如何判断传播延迟瓶颈
 

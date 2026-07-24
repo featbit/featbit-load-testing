@@ -9,6 +9,7 @@ import {
 
 test("splits the global connection target evenly across runners", () => {
   assert.equal(expectedConnectionsPerRunner(5000, 2), 2500);
+  assert.equal(expectedConnectionsPerRunner(3000, 2), 1500);
   assert.equal(expectedConnectionsPerRunner(1000, 2), 500);
   assert.equal(expectedConnectionsPerRunner(10, 2), 5);
 });

@@ -88,7 +88,7 @@ api:
 
 els:
   enabled: true
-  replicaCount: 3
+  replicaCount: 6
   image:
     pullPolicy: IfNotPresent
   service:
@@ -109,6 +109,14 @@ els:
       operator: Equal
       value: featbit
       effect: NoSchedule
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/instance: featbit
+          app.kubernetes.io/component: els
   affinity:
     podAntiAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:
@@ -121,11 +129,11 @@ els:
                 app.kubernetes.io/component: els
   resources:
     requests:
-      cpu: "1"
-      memory: 512Mi
+      cpu: 500m
+      memory: 256Mi
     limits:
       cpu: "1"
-      memory: 1Gi
+      memory: 512Mi
 
 # DAS is outside the Server SDK streaming path measured by this repository.
 das:

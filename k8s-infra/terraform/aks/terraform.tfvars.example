@@ -15,16 +15,16 @@ availability_zones = []
 # api_server_authorized_ip_ranges = ["203.0.113.10/32"]
 api_server_authorized_ip_ranges = []
 
-# Cost-oriented, ephemeral default topology:
+# Ephemeral growth topology:
 # - one small system node;
-# - two target nodes shared by UI, API, and three ELS Pods;
-# - two isolated loadgen nodes, one runner per node.
+# - three target nodes shared by UI, API, and six ELS Pods;
+# - six isolated D4 loadgen nodes (growth uses five; growth-plus scales to ten).
 system_node_vm_size  = "Standard_D2ds_v5"
 system_node_count    = 1
 target_node_vm_size  = "Standard_D4ds_v5"
-target_node_count    = 2
+target_node_count    = 3
 loadgen_node_vm_size = "Standard_D4ds_v5"
-loadgen_node_count   = 2
+loadgen_node_count   = 6
 
 tags = {
   owner      = "<team-or-user>"

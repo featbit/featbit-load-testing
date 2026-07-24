@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("smoke", "baseline", "growth")]
+    [ValidateSet("smoke", "baseline", "baseline-plus", "growth", "growth-plus")]
     [string] $Profile = "smoke",
 
     [Parameter(Mandatory)]
@@ -11,6 +11,15 @@ param(
 
     [ValidateRange(2, 20)]
     [int] $Parallelism = 2,
+
+    [ValidateRange(1, 20)]
+    [int] $RunnersPerNode = 1,
+
+    [string] $RunnerCpuRequest = "",
+
+    [string] $RunnerMemoryRequest = "",
+
+    [string] $RunnerMemoryLimit = "",
 
     [string] $Note = "",
 
@@ -29,7 +38,8 @@ function Get-AksTestProfile {
     switch ($Name.ToLowerInvariant()) {
         "smoke" {
             return [ordered]@{
-                ProbeFlagCount = 1
+                ProvisionedProbeFlagCount = 1
+                MeasuredProbeFlagCount = 1
                 MaxConnections = 10
                 ConnectionsPerSecond = 1
                 StabilizationSeconds = 10
@@ -39,34 +49,71 @@ function Get-AksTestProfile {
                 RunnerCpuRequest = "1"
                 RunnerMemoryRequest = "512Mi"
                 RunnerMemoryLimit = "4Gi"
+                MinimumParallelism = 2
             }
         }
         "baseline" {
             return [ordered]@{
-                ProbeFlagCount = 10
+                ProvisionedProbeFlagCount = 10
+                MeasuredProbeFlagCount = 1
                 MaxConnections = 1000
                 ConnectionsPerSecond = 10
                 StabilizationSeconds = 30
                 InitialSyncTimeoutSeconds = 20
-                HoldDurationSeconds = 600
+                HoldDurationSeconds = 70
                 DrainDurationSeconds = 10
                 RunnerCpuRequest = "1"
                 RunnerMemoryRequest = "512Mi"
                 RunnerMemoryLimit = "4Gi"
+                MinimumParallelism = 2
+            }
+        }
+        "baseline-plus" {
+            return [ordered]@{
+                ProvisionedProbeFlagCount = 10
+                MeasuredProbeFlagCount = 1
+                MaxConnections = 3000
+                ConnectionsPerSecond = 30
+                StabilizationSeconds = 30
+                InitialSyncTimeoutSeconds = 20
+                HoldDurationSeconds = 70
+                DrainDurationSeconds = 10
+                RunnerCpuRequest = "2"
+                RunnerMemoryRequest = "2Gi"
+                RunnerMemoryLimit = "6Gi"
+                MinimumParallelism = 2
             }
         }
         "growth" {
             return [ordered]@{
-                ProbeFlagCount = 20
-                MaxConnections = 5000
-                ConnectionsPerSecond = 50
+                ProvisionedProbeFlagCount = 20
+                MeasuredProbeFlagCount = 1
+                MaxConnections = 10000
+                ConnectionsPerSecond = 100
+                StabilizationSeconds = 30
+                InitialSyncTimeoutSeconds = 20
+                HoldDurationSeconds = 600
+                DrainDurationSeconds = 10
+                RunnerCpuRequest = "2"
+                RunnerMemoryRequest = "4Gi"
+                RunnerMemoryLimit = "8Gi"
+                MinimumParallelism = 5
+            }
+        }
+        "growth-plus" {
+            return [ordered]@{
+                ProvisionedProbeFlagCount = 20
+                MeasuredProbeFlagCount = 1
+                MaxConnections = 20000
+                ConnectionsPerSecond = 200
                 StabilizationSeconds = 30
                 InitialSyncTimeoutSeconds = 20
                 HoldDurationSeconds = 600
                 DrainDurationSeconds = 10
                 RunnerCpuRequest = "3"
-                RunnerMemoryRequest = "4Gi"
-                RunnerMemoryLimit = "8Gi"
+                RunnerMemoryRequest = "6Gi"
+                RunnerMemoryLimit = "10Gi"
+                MinimumParallelism = 10
             }
         }
         default {
@@ -122,6 +169,42 @@ $normalizedRunnerImage = Assert-DigestPinnedImage -Image $RunnerImage
 
 $profileName = $Profile.ToLowerInvariant()
 $profileConfig = Get-AksTestProfile -Name $profileName
+foreach ($override in @(
+    @{ Name = "RunnerCpuRequest"; Value = $RunnerCpuRequest; Pattern = "^[0-9]+(?:m|\.[0-9]+)?$" }
+    @{ Name = "RunnerMemoryRequest"; Value = $RunnerMemoryRequest; Pattern = "^[0-9]+(?:Mi|Gi)$" }
+    @{ Name = "RunnerMemoryLimit"; Value = $RunnerMemoryLimit; Pattern = "^[0-9]+(?:Mi|Gi)$" }
+)) {
+    if (
+        -not [string]::IsNullOrWhiteSpace($override.Value) -and
+        $override.Value.Trim() -notmatch $override.Pattern
+    ) {
+        throw "$($override.Name) '$($override.Value)' is not a supported Kubernetes quantity."
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace($RunnerCpuRequest)) {
+    $profileConfig.RunnerCpuRequest = $RunnerCpuRequest.Trim()
+}
+if (-not [string]::IsNullOrWhiteSpace($RunnerMemoryRequest)) {
+    $profileConfig.RunnerMemoryRequest = $RunnerMemoryRequest.Trim()
+}
+if (-not [string]::IsNullOrWhiteSpace($RunnerMemoryLimit)) {
+    $profileConfig.RunnerMemoryLimit = $RunnerMemoryLimit.Trim()
+}
+if ($Parallelism -lt $profileConfig.MinimumParallelism) {
+    throw (
+        "Profile '$profileName' requires parallelism >= " +
+        "$($profileConfig.MinimumParallelism); received $Parallelism."
+    )
+}
+if (
+    $profileConfig.MeasuredProbeFlagCount -lt 1 -or
+    $profileConfig.MeasuredProbeFlagCount -gt $profileConfig.ProvisionedProbeFlagCount
+) {
+    throw (
+        "Profile '$profileName' must measure at least one probe flag and cannot " +
+        "measure more flags than it provisions."
+    )
+}
 if ($profileConfig.MaxConnections % $Parallelism -ne 0) {
     throw (
         "Profile '$profileName' has $($profileConfig.MaxConnections) connections, " +
@@ -130,10 +213,11 @@ if ($profileConfig.MaxConnections % $Parallelism -ne 0) {
 }
 
 $loadgenNodes = @(Get-LoadgenNodes -Context $targetContext)
-if ($loadgenNodes.Count -lt $Parallelism) {
+$requiredLoadgenNodes = [Math]::Ceiling($Parallelism / $RunnersPerNode)
+if ($loadgenNodes.Count -lt $requiredLoadgenNodes) {
     throw (
-        "parallelism $Parallelism with separate=true requires at least $Parallelism " +
-        "loadgen nodes; found $($loadgenNodes.Count)."
+        "parallelism $Parallelism with at most $RunnersPerNode runner(s) per node " +
+        "requires at least $requiredLoadgenNodes loadgen nodes; found $($loadgenNodes.Count)."
     )
 }
 foreach ($node in $loadgenNodes) {
@@ -197,9 +281,31 @@ $runId = "{0}-{1}-{2}" -f `
     $gitSha.ToLowerInvariant()
 $runId = "$runId-$([Guid]::NewGuid().ToString("N").Substring(0, 4))"
 $testRunName = "featbit-$runId"
-$probeFlagKeys = ((1..$profileConfig.ProbeFlagCount) | ForEach-Object {
+$probeFlagKeys = ((1..$profileConfig.MeasuredProbeFlagCount) | ForEach-Object {
     "loadtest-sync-probe-{0:D2}" -f $_
 }) -join ","
+$postRampWarmupFlagKey = if (
+    $profileConfig.ProvisionedProbeFlagCount -gt $profileConfig.MeasuredProbeFlagCount
+) {
+    "loadtest-sync-probe-{0:D2}" -f ($profileConfig.MeasuredProbeFlagCount + 1)
+}
+else {
+    ""
+}
+$plannedRampSeconds = [Math]::Ceiling(
+    $profileConfig.MaxConnections / $profileConfig.ConnectionsPerSecond
+)
+# These values are fixed in templates/testrun-aks.yaml for distributed runs.
+$plannedSetupBarrierSeconds = 60
+$plannedTeardownGraceSeconds = 30
+$plannedWallClockSeconds = (
+    $plannedSetupBarrierSeconds +
+    $plannedRampSeconds +
+    $profileConfig.StabilizationSeconds +
+    $profileConfig.HoldDurationSeconds +
+    $profileConfig.DrainDurationSeconds +
+    $plannedTeardownGraceSeconds
+)
 
 $renderedTestRun = Get-Content -Raw -LiteralPath $templatePath
 $tokens = [ordered]@{
@@ -207,11 +313,14 @@ $tokens = [ordered]@{
     "__RUN_ID__" = $runId
     "__PROFILE__" = $profileName
     "__PARALLELISM__" = $Parallelism
+    "__SEPARATE_RUNNERS__" = ($RunnersPerNode -eq 1).ToString().ToLowerInvariant()
+    "__MIN_LOADGEN_DOMAINS__" = $requiredLoadgenNodes
     "__RUNNER_IMAGE__" = $normalizedRunnerImage
     "__RUNNER_CPU_REQUEST__" = $profileConfig.RunnerCpuRequest
     "__RUNNER_MEMORY_REQUEST__" = $profileConfig.RunnerMemoryRequest
     "__RUNNER_MEMORY_LIMIT__" = $profileConfig.RunnerMemoryLimit
     "__PROBE_FLAG_KEYS__" = $probeFlagKeys
+    "__POST_RAMP_WARMUP_FLAG_KEY__" = $postRampWarmupFlagKey
     "__MAX_CONNECTIONS__" = $profileConfig.MaxConnections
     "__CONNECTIONS_PER_SECOND__" = $profileConfig.ConnectionsPerSecond
     "__STABILIZATION_SECONDS__" = $profileConfig.StabilizationSeconds
@@ -252,9 +361,22 @@ $metadata = [ordered]@{
     kubernetesContext = $targetContext
     profile = $profileName
     parallelism = $Parallelism
+    runnersPerNode = $RunnersPerNode
+    requiredLoadgenNodes = $requiredLoadgenNodes
     runnerImage = $normalizedRunnerImage
     note = $Note
     parameters = $profileConfig
+    measuredProbeFlagKeys = $probeFlagKeys.Split(",")
+    postRampWarmupFlagKey = $postRampWarmupFlagKey
+    plannedTimelineSeconds = [ordered]@{
+        setupBarrier = $plannedSetupBarrierSeconds
+        ramp = $plannedRampSeconds
+        stabilization = $profileConfig.StabilizationSeconds
+        hold = $profileConfig.HoldDurationSeconds
+        drain = $profileConfig.DrainDurationSeconds
+        teardownGrace = $plannedTeardownGraceSeconds
+        total = $plannedWallClockSeconds
+    }
     template = [ordered]@{
         path = $templatePath
         sha256 = (Get-FileHash -LiteralPath $templatePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -287,8 +409,21 @@ Write-Host "AKS TestRun rendered and validated; nothing was submitted." -Foregro
 Write-Host "Kubernetes context: $targetContext"
 Write-Host "Profile: $profileName"
 Write-Host "Parallelism: $Parallelism"
+Write-Host "Runners per loadgen node: $RunnersPerNode"
+Write-Host "Required loadgen nodes: $requiredLoadgenNodes"
 Write-Host "Total connections: $($profileConfig.MaxConnections)"
 Write-Host "Connections per runner: $($profileConfig.MaxConnections / $Parallelism)"
+Write-Host "Provisioned probe flags: $($profileConfig.ProvisionedProbeFlagCount)"
+Write-Host "Measured/changed probe flags: $($profileConfig.MeasuredProbeFlagCount)"
+Write-Host (
+    "Post-ramp warm-up flag: {0}" -f
+    $(if ($postRampWarmupFlagKey) { $postRampWarmupFlagKey } else { "disabled" })
+)
+Write-Host (
+    "Planned wall-clock duration: approximately {0}s ({1:N1}m)" -f
+    $plannedWallClockSeconds,
+    ($plannedWallClockSeconds / 60)
+)
 Write-Host "Runner image: $normalizedRunnerImage"
 Write-Host "Manifest: $manifestPath"
 Write-Host "Metadata: $metadataPath"
@@ -298,7 +433,13 @@ Write-Host "Server dry-run: $dryRunOutput"
     RunId = $runId
     TestRunName = $testRunName
     Profile = $profileName
-    ProbeFlagCount = $profileConfig.ProbeFlagCount
+    Parallelism = $Parallelism
+    RunnersPerNode = $RunnersPerNode
+    ConnectionsPerRunner = $profileConfig.MaxConnections / $Parallelism
+    ProvisionedProbeFlagCount = $profileConfig.ProvisionedProbeFlagCount
+    MeasuredProbeFlagCount = $profileConfig.MeasuredProbeFlagCount
+    PostRampWarmupFlagKey = $postRampWarmupFlagKey
+    PlannedWallClockSeconds = $plannedWallClockSeconds
     ManifestPath = $manifestPath
     MetadataPath = $metadataPath
 }
