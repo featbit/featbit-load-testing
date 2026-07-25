@@ -1,6 +1,0 @@
-FROM grafana/k6:2.1.0
-
-# The build context is the repository root. Keep the directory structure because
-# server-streaming.js imports modules from ./lib.
-COPY k6 /tests/k6
-

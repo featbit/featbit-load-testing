@@ -6,6 +6,8 @@
 迁移到 Azure Kubernetes Service（AKS）。目标是让 FeatBit、k6 Operator 和实际负载都在
 Azure 中运行，并通过资源隔离和监控判断传播延迟来自负载生成器还是 FeatBit 服务端。
 
+所有相对路径命令均从仓库中的 `server-sdk-load-test/` 目录执行。
+
 - 测试行为、Profile 和通过条件见[根 README](../README.md)。
 - 单机流程演练见[Docker Desktop 指南](README.md)。
 
@@ -418,7 +420,7 @@ kubectl --context $aksContext -n featbit get pods,services,endpointslices -o wid
 ## 4. 安装 k6 Operator 并隔离节点
 
 首次迁移沿用本地已验证的 chart `4.5.0` / app `1.5.0`。Operator 放到 loadgen 节点池，
-避免占用 FeatBit 节点。推荐从仓库根目录执行可重复的 bootstrap；它同时应用第 5 节的
+避免占用 FeatBit 节点。推荐从 `server-sdk-load-test/` 目录执行可重复的 bootstrap；它同时应用第 5 节的
 AKS base manifest，并拒绝没有正确 label/taint 的节点池。脚本使用隔离的临时 Helm
 repository config/cache，不依赖或修改本机其他 Helm repo 的缓存：
 
@@ -995,6 +997,73 @@ baseline、baseline-plus、growth 和 growth-plus 还必须确认：
   分别是正式样本超过对应延迟的精确比例，而不是从 p95/p99 估算的区间；
 - `post_ramp_warmup_latency_ms` 只描述被排除的预热广播，不能混入正式
   `probe_sync_latency_ms`。
+
+### 11.1 固定 10k 的 p99 容量矩阵
+
+当目标是区分 runner 分片与 ELS 副本数，而不是继续手工试配置时，使用
+[`aks-p99-capacity.json`](matrices/aks-p99-capacity.json) 和可恢复执行器。矩阵固定
+10,000 条 WebSocket、`100/s` 建连、20 个已配置 flags、只变更 flag-01、每轮
+10 revisions、每组 3 次：
+
+| 组 | runner 分片 | loadgen | ELS |
+| --- | --- | --- | --- |
+| g1 | `20 × 500` | 10 nodes × 2 runners | 6 pods / 3 nodes |
+| g2 | `40 × 250` | 10 nodes × 4 runners | 6 pods / 3 nodes |
+| g3 | `20 × 500` | 10 nodes × 2 runners | 12 pods / 3 nodes |
+| g4 | `40 × 250` | 10 nodes × 4 runners | 12 pods / 3 nodes |
+| g5 | `20 × 500` | 10 nodes × 2 runners | 3 pods / 3 nodes |
+
+主指标预先固定为“每轮 10 个 revisions 中，最差的 per-runner
+`probe_sync_latency_ms p99`”。每个 revision 的每个 runner 都必须 `<1000ms`。
+三次重复只报告中位数和范围，不作统计显著性声明。两组只有同时满足相对变化 `<10%`
+和绝对变化 `<50ms` 才判定为“实际差异不大”。
+
+执行器会在每个新样本前把 ELS 缩到 0，等旧 Pod 全部退出后再拉到目标副本。这避免
+RollingUpdate 期间新旧 Pod 同时参与 topology spread，导致 6 副本最终成为 `2/1/3`。
+拉起后必须分别形成 `1/1/1`、`2/2/2` 或 `4/4/4`，再静置 60 秒预热。因此该流程会让
+公网 UI 的 streaming 服务在轮间短暂不可用，只能用于无人操作的专用测试环境。
+
+先做不改变集群的预检：
+
+```powershell
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 -ValidateOnly
+```
+
+预检会确认 10 个 loadgen 节点、3 个 featbit 节点、无 HPA、ELS 固定资源、内部
+API/ELS 地址、20 个 canonical flags、10 revisions 和历史 seed 证据。历史结果只有在
+runner/ELS placement、镜像、资源、revision 和 5 秒监控证据全部相同时才复用。
+
+先只跑一个新样本作为端到端 gate：
+
+```powershell
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 -MaxFreshRuns 1
+```
+
+确认 state 中的新样本为 `completed`、资源证据完整且报告可解析后，继续剩余样本：
+
+```powershell
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 -Resume
+```
+
+执行状态原子写入
+`results\aks-p99-capacity-10k-state.json`。`-MaxFreshRuns N` 可在完成 N 个新样本后
+安全暂停；再次执行必须显式使用 `-Resume`。失败现场会被保留，先检查 state、TestRun、
+Pod 和日志；确认该轮无效后才使用 `-Resume -RetryFailed` 创建新的 run ID，不能覆盖旧证据。
+
+进行中可以生成中间报告，全部完成后生成正式报告：
+
+```powershell
+# 中间报告，不得用于最终容量结论。
+.\k8s-infra\scripts\summarize-aks-capacity-matrix.ps1 -AllowIncomplete
+
+# 五组均为 3/3 后，省略 -AllowIncomplete。
+.\k8s-infra\scripts\summarize-aks-capacity-matrix.ps1
+```
+
+汇总器同时读取延迟分析和 5 秒资源样本，输出组内中位数/范围、预注册组间差值、ELS
+聚合峰值、runner 峰值及 JSON/Markdown 证据。这个矩阵只能证明某个 ELS 规模在
+**恰好 10,000** 条并行 WebSocket 下通过或失败；即使 p99 很低，也不能外推为
+10,000 以上的精确容量上限。
 
 ## 12. 如何判断传播延迟瓶颈
 

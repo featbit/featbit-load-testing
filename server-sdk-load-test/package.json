@@ -1,5 +1,5 @@
 {
-  "name": "featbit-load-testing",
+  "name": "featbit-server-sdk-load-testing",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,4 +7,3 @@
     "check": "node --check k6/server-streaming.js"
   }
 }
-

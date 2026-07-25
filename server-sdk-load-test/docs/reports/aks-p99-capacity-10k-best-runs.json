@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 1,
+  "sourceMatrix": "aks-p99-capacity-10k-summary.json",
+  "selection": {
+    "runsPerGroup": 3,
+    "criterion": "minimum worst per-revision, per-runner probe_sync_latency_ms p99",
+    "bestObservedView": true
+  },
+  "deJitter": {
+    "removedWhen": "probe_sync_latency_ms > 100",
+    "cutoffMs": 100,
+    "diagnosticOnly": true,
+    "percentileScope": "minimum-maximum across runner-level filtered Trends"
+  },
+  "groups": [
+    {
+      "id": "g1",
+      "configuration": {
+        "parallelism": 20,
+        "connectionsPerRunner": 500,
+        "elsReplicas": 6
+      },
+      "selectedReplicate": 2,
+      "runId": "growth-20260724-211542-fdf299e3-2735",
+      "raw": {
+        "sampleCount": 100000,
+        "worstRevisionRunnerP99Ms": 207.01,
+        "weightedAverageMs": 61.255,
+        "maximumMs": 208,
+        "over100MsCount": 7543,
+        "over100MsRate": 0.07543
+      },
+      "withoutSpikes": {
+        "retainedSampleCount": 92457,
+        "weightedAverageMs": 55.88648,
+        "runnerP95MinMs": 84,
+        "runnerP95MaxMs": 97,
+        "runnerP99MinMs": 92,
+        "runnerP99MaxMs": 100,
+        "maximumMs": 100,
+        "affectedRunnerCount": 20,
+        "affectedNodeCount": 10,
+        "affectedRunnerRevisionCount": 79
+      },
+      "resources": {
+        "elsAggregatePeakCpuMillicores": 539.61,
+        "elsAggregatePeakMemoryMiB": 802.68,
+        "runnerAggregatePeakCpuMillicores": 2340.82,
+        "runnerAggregatePeakMemoryMiB": 14138.39,
+        "featbitNodeAggregatePeakCpuMillicores": 957.43,
+        "featbitNodeAggregatePeakMemoryMiB": 6054.47,
+        "loadgenNodeAggregatePeakCpuMillicores": 2042.15,
+        "loadgenNodeAggregatePeakMemoryMiB": 31291.19
+      }
+    },
+    {
+      "id": "g2",
+      "configuration": {
+        "parallelism": 40,
+        "connectionsPerRunner": 250,
+        "elsReplicas": 6
+      },
+      "selectedReplicate": 3,
+      "runId": "growth-20260724-230351-fdf299e3-980a",
+      "raw": {
+        "sampleCount": 100000,
+        "worstRevisionRunnerP99Ms": 232,
+        "weightedAverageMs": 63.17256,
+        "maximumMs": 232,
+        "over100MsCount": 7652,
+        "over100MsRate": 0.07652
+      },
+      "withoutSpikes": {
+        "retainedSampleCount": 92348,
+        "weightedAverageMs": 58.57923,
+        "runnerP95MinMs": 89,
+        "runnerP95MaxMs": 98,
+        "runnerP99MinMs": 95,
+        "runnerP99MaxMs": 100,
+        "maximumMs": 100,
+        "affectedRunnerCount": 40,
+        "affectedNodeCount": 10,
+        "affectedRunnerRevisionCount": 177
+      },
+      "resources": {
+        "elsAggregatePeakCpuMillicores": 484.27,
+        "elsAggregatePeakMemoryMiB": 793.08,
+        "runnerAggregatePeakCpuMillicores": 1703.97,
+        "runnerAggregatePeakMemoryMiB": 14806.99,
+        "featbitNodeAggregatePeakCpuMillicores": 920.33,
+        "featbitNodeAggregatePeakMemoryMiB": 6082.46,
+        "loadgenNodeAggregatePeakCpuMillicores": 2470.01,
+        "loadgenNodeAggregatePeakMemoryMiB": 32821.29
+      }
+    },
+    {
+      "id": "g3",
+      "configuration": {
+        "parallelism": 20,
+        "connectionsPerRunner": 500,
+        "elsReplicas": 12
+      },
+      "selectedReplicate": 2,
+      "runId": "growth-20260724-205529-fdf299e3-a56c",
+      "raw": {
+        "sampleCount": 100000,
+        "worstRevisionRunnerP99Ms": 245,
+        "weightedAverageMs": 60.44492,
+        "maximumMs": 247,
+        "over100MsCount": 5503,
+        "over100MsRate": 0.05503
+      },
+      "withoutSpikes": {
+        "retainedSampleCount": 94497,
+        "weightedAverageMs": 56.08916,
+        "runnerP95MinMs": 85,
+        "runnerP95MaxMs": 97,
+        "runnerP99MinMs": 93,
+        "runnerP99MaxMs": 100,
+        "maximumMs": 100,
+        "affectedRunnerCount": 18,
+        "affectedNodeCount": 10,
+        "affectedRunnerRevisionCount": 51
+      },
+      "resources": {
+        "elsAggregatePeakCpuMillicores": 616.83,
+        "elsAggregatePeakMemoryMiB": 1333.97,
+        "runnerAggregatePeakCpuMillicores": 1408.04,
+        "runnerAggregatePeakMemoryMiB": 14303.42,
+        "featbitNodeAggregatePeakCpuMillicores": 1057.37,
+        "featbitNodeAggregatePeakMemoryMiB": 6628.85,
+        "loadgenNodeAggregatePeakCpuMillicores": 2093.09,
+        "loadgenNodeAggregatePeakMemoryMiB": 31390.11
+      }
+    },
+    {
+      "id": "g4",
+      "configuration": {
+        "parallelism": 40,
+        "connectionsPerRunner": 250,
+        "elsReplicas": 12
+      },
+      "selectedReplicate": 3,
+      "runId": "growth-20260724-224023-fdf299e3-619d",
+      "raw": {
+        "sampleCount": 100000,
+        "worstRevisionRunnerP99Ms": 223,
+        "weightedAverageMs": 61.63243,
+        "maximumMs": 223,
+        "over100MsCount": 6624,
+        "over100MsRate": 0.06624
+      },
+      "withoutSpikes": {
+        "retainedSampleCount": 93376,
+        "weightedAverageMs": 57.47884,
+        "runnerP95MinMs": 85,
+        "runnerP95MaxMs": 98,
+        "runnerP99MinMs": 91,
+        "runnerP99MaxMs": 100,
+        "maximumMs": 100,
+        "affectedRunnerCount": 38,
+        "affectedNodeCount": 10,
+        "affectedRunnerRevisionCount": 116
+      },
+      "resources": {
+        "elsAggregatePeakCpuMillicores": 597.9,
+        "elsAggregatePeakMemoryMiB": 1344.36,
+        "runnerAggregatePeakCpuMillicores": 1319.73,
+        "runnerAggregatePeakMemoryMiB": 14764.13,
+        "featbitNodeAggregatePeakCpuMillicores": 906.53,
+        "featbitNodeAggregatePeakMemoryMiB": 6653.54,
+        "loadgenNodeAggregatePeakCpuMillicores": 2506.04,
+        "loadgenNodeAggregatePeakMemoryMiB": 32715.44
+      }
+    },
+    {
+      "id": "g5",
+      "configuration": {
+        "parallelism": 20,
+        "connectionsPerRunner": 500,
+        "elsReplicas": 3
+      },
+      "selectedReplicate": 2,
+      "runId": "growth-20260724-201133-fdf299e3-18ef",
+      "raw": {
+        "sampleCount": 100000,
+        "worstRevisionRunnerP99Ms": 226.01,
+        "weightedAverageMs": 74.20572,
+        "maximumMs": 227,
+        "over100MsCount": 20911,
+        "over100MsRate": 0.20911
+      },
+      "withoutSpikes": {
+        "retainedSampleCount": 79089,
+        "weightedAverageMs": 62.11645,
+        "runnerP95MinMs": 94,
+        "runnerP95MaxMs": 98,
+        "runnerP99MinMs": 99,
+        "runnerP99MaxMs": 100,
+        "maximumMs": 100,
+        "affectedRunnerCount": 20,
+        "affectedNodeCount": 10,
+        "affectedRunnerRevisionCount": 156
+      },
+      "resources": {
+        "elsAggregatePeakCpuMillicores": 389.74,
+        "elsAggregatePeakMemoryMiB": 510.78,
+        "runnerAggregatePeakCpuMillicores": 1760.83,
+        "runnerAggregatePeakMemoryMiB": 11517.21,
+        "featbitNodeAggregatePeakCpuMillicores": 807.34,
+        "featbitNodeAggregatePeakMemoryMiB": 5724.47,
+        "loadgenNodeAggregatePeakCpuMillicores": 2055.22,
+        "loadgenNodeAggregatePeakMemoryMiB": 28328.1
+      }
+    }
+  ]
+}

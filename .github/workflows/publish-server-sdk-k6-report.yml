@@ -1,0 +1,42 @@
+name: Publish Server SDK k6 report
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-server-sdk-k6-report.yml"
+      - "server-sdk-load-test/docs/reports/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload report site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: server-sdk-load-test/docs
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

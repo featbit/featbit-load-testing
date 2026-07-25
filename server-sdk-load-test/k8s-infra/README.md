@@ -20,7 +20,7 @@ JSON 与 HTML 报告。
    每轮自动重建该 Profile 的 probe flags。
 6. 查看实时 Dashboard，并从 `results/` 读取最终报告。
 
-所有命令都从仓库根目录、使用 PowerShell 7 执行。
+所有命令都从仓库中的 `server-sdk-load-test/` 目录、使用 PowerShell 7 执行。
 
 让 Codex 代跑时，只需说明 `smoke`、`baseline`、`baseline-plus`、`growth` 或
 `growth-plus` 以及本轮 Note。
@@ -391,7 +391,7 @@ kubectl --context docker-desktop -n featbit-loadtest describe testrun "featbit-$
 kubectl --context docker-desktop -n featbit-loadtest logs "job/featbit-$runId-1"
 ```
 
-正常等待模式会在仓库根目录生成：
+正常等待模式会在 `server-sdk-load-test/` 目录生成：
 
 ```text
 results/<run-id>-metadata.json

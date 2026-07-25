@@ -1,0 +1,3015 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-07-25T00:07:46.2336728Z",
+  "matrixId": "aks-p99-capacity-10k",
+  "matrixSha256": "8ae8a29e99f8aaeffe2f71f334f8f3b77fc6173d182dbfc3115f383ad9fe0411",
+  "stateStatus": "completed",
+  "complete": true,
+  "primaryMetric": "Worst per-revision, per-runner probe_sync_latency_ms p99",
+  "successThresholdMs": 1000.0,
+  "practicalEquivalence": {
+    "relativeFraction": 0.1,
+    "absoluteMilliseconds": 50
+  },
+  "fixed": {
+    "kubernetesContext": "aks-featbit-load-testing",
+    "profile": "growth",
+    "totalConnections": 10000,
+    "connectionsPerSecond": 100,
+    "loadgenNodeCount": 10,
+    "featbitNodeCount": 3,
+    "repetitions": 3,
+    "measuredFlagCount": 1,
+    "provisionedFlagCount": 20,
+    "expectedRevisions": [
+      "rev-001",
+      "rev-002",
+      "rev-003",
+      "rev-004",
+      "rev-005",
+      "rev-006",
+      "rev-007",
+      "rev-008",
+      "rev-009",
+      "rev-010"
+    ],
+    "streamingUrl": "ws://featbit-els.featbit.svc.cluster.local:5100",
+    "configurationApiUrl": "http://featbit-api.featbit.svc.cluster.local:5000",
+    "controllerWarmupSettleSeconds": 2,
+    "controllerStartDelaySeconds": 5,
+    "revisionIntervalSeconds": 30,
+    "controllerFinalSettleSeconds": 30,
+    "holdDurationSeconds": 600,
+    "resourceSampleIntervalSeconds": 5,
+    "elsSettleSeconds": 60,
+    "betweenRunSettleSeconds": 30,
+    "runnerImage": "featbitloadtesting22793c56acr.azurecr.io/featbit-k6@sha256:310326a8dbb80a7312e1e4bc8777b5d8f8a407b8dce03cb8678c4b15f4f02be7",
+    "elsImage": "docker.io/featbit/featbit-evaluation-server:5.4.4",
+    "elsResources": {
+      "cpuRequest": "500m",
+      "cpuLimit": "1",
+      "memoryRequest": "256Mi",
+      "memoryLimit": "512Mi"
+    }
+  },
+  "groups": [
+    {
+      "id": "g1",
+      "label": "p20 / ELS 6",
+      "parallelism": 20,
+      "connectionsPerRunner": 500,
+      "runnersPerNode": 2,
+      "elsReplicas": 6,
+      "averageConnectionsPerElsPod": 1666.6666666666667,
+      "requiredRuns": 3,
+      "completedRuns": 3,
+      "primaryP99Ms": {
+        "count": 3,
+        "minimum": 207.01,
+        "median": 296.0,
+        "maximum": 299.0,
+        "mean": 267.33666666666664
+      },
+      "weightedAverageMs": {
+        "count": 3,
+        "minimum": 61.255,
+        "median": 65.64957,
+        "maximum": 65.79727,
+        "mean": 64.23394666666667
+      },
+      "worstRevisionRunnerP95Ms": {
+        "count": 3,
+        "minimum": 202.04999999999995,
+        "median": 288.04999999999995,
+        "maximum": 294.0,
+        "mean": 261.3666666666666
+      },
+      "maximumMs": {
+        "count": 3,
+        "minimum": 208.0,
+        "median": 299.0,
+        "maximum": 299.0,
+        "mean": 268.6666666666667
+      },
+      "over100MsRate": {
+        "count": 3,
+        "minimum": 0.07543,
+        "median": 0.09028,
+        "maximum": 0.09989,
+        "mean": 0.08853333333333334
+      },
+      "allRevisionsBelowThreshold": true,
+      "elsAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 424.56038800000005,
+        "median": 443.926934,
+        "maximum": 539.608675,
+        "mean": 469.3653323333333
+      },
+      "elsAggregatePeakCpuLimitPercent": {
+        "count": 3,
+        "minimum": 7.0760064666666675,
+        "median": 7.398782233333334,
+        "maximum": 8.993477916666667,
+        "mean": 7.822755538888889
+      },
+      "elsAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 781.85546875,
+        "median": 798.50390625,
+        "maximum": 802.68359375,
+        "mean": 794.34765625
+      },
+      "elsAggregatePeakMemoryLimitPercent": {
+        "count": 3,
+        "minimum": 25.451024373372395,
+        "median": 25.992965698242188,
+        "maximum": 26.12902323404948,
+        "mean": 25.85767110188802
+      },
+      "elsBusiestPodPeakCpuMillicores": {
+        "count": 3,
+        "minimum": 83.659479,
+        "median": 95.461381,
+        "maximum": 107.119721,
+        "mean": 95.413527
+      },
+      "elsBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 143.17578125,
+        "median": 145.48046875,
+        "maximum": 148.65234375,
+        "mean": 145.76953125
+      },
+      "runnerAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 776.4818080000001,
+        "median": 907.157234,
+        "maximum": 2340.820826,
+        "mean": 1341.4866226666668
+      },
+      "runnerAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 11352.484375,
+        "median": 14119.04296875,
+        "maximum": 14138.39453125,
+        "mean": 13203.307291666666
+      },
+      "runnerBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 602.5703125,
+        "median": 731.21875,
+        "maximum": 757.16796875,
+        "mean": 696.9856770833334
+      },
+      "runIds": [
+        "growth-20260724-182116-fdf299e3-1de7",
+        "growth-20260724-211542-fdf299e3-2735",
+        "growth-20260724-213556-fdf299e3-3ff2"
+      ]
+    },
+    {
+      "id": "g2",
+      "label": "p40 / ELS 6",
+      "parallelism": 40,
+      "connectionsPerRunner": 250,
+      "runnersPerNode": 4,
+      "elsReplicas": 6,
+      "averageConnectionsPerElsPod": 1666.6666666666667,
+      "requiredRuns": 3,
+      "completedRuns": 3,
+      "primaryP99Ms": {
+        "count": 3,
+        "minimum": 232.0,
+        "median": 233.0,
+        "maximum": 262.02,
+        "mean": 242.34
+      },
+      "weightedAverageMs": {
+        "count": 3,
+        "minimum": 63.17256,
+        "median": 63.58595,
+        "maximum": 64.92102,
+        "mean": 63.89317666666667
+      },
+      "worstRevisionRunnerP95Ms": {
+        "count": 3,
+        "minimum": 231.0,
+        "median": 231.0,
+        "maximum": 257.0,
+        "mean": 239.66666666666666
+      },
+      "maximumMs": {
+        "count": 3,
+        "minimum": 232.0,
+        "median": 233.0,
+        "maximum": 264.0,
+        "mean": 243.0
+      },
+      "over100MsRate": {
+        "count": 3,
+        "minimum": 0.07652,
+        "median": 0.08877,
+        "maximum": 0.09996,
+        "mean": 0.08841666666666666
+      },
+      "allRevisionsBelowThreshold": true,
+      "elsAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 365.939899,
+        "median": 382.477306,
+        "maximum": 484.273122,
+        "mean": 410.89677566666666
+      },
+      "elsAggregatePeakCpuLimitPercent": {
+        "count": 3,
+        "minimum": 6.098998316666667,
+        "median": 6.374621766666666,
+        "maximum": 8.071218700000001,
+        "mean": 6.848279594444445
+      },
+      "elsAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 774.30078125,
+        "median": 793.078125,
+        "maximum": 834.13671875,
+        "mean": 800.5052083333334
+      },
+      "elsAggregatePeakMemoryLimitPercent": {
+        "count": 3,
+        "minimum": 25.205103556315105,
+        "median": 25.81634521484375,
+        "maximum": 27.15288798014323,
+        "mean": 26.058112250434032
+      },
+      "elsBusiestPodPeakCpuMillicores": {
+        "count": 3,
+        "minimum": 74.704657,
+        "median": 85.656391,
+        "maximum": 101.305101,
+        "mean": 87.22204966666665
+      },
+      "elsBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 141.7265625,
+        "median": 146.8671875,
+        "maximum": 151.90234375,
+        "mean": 146.83203125
+      },
+      "runnerAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 914.5228529999999,
+        "median": 1192.0992520000002,
+        "maximum": 1703.9717729999998,
+        "mean": 1270.1979593333333
+      },
+      "runnerAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 11099.2265625,
+        "median": 11857.9140625,
+        "maximum": 14806.98828125,
+        "mean": 12588.04296875
+      },
+      "runnerBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 312.40625,
+        "median": 322.92578125,
+        "maximum": 390.1953125,
+        "mean": 341.8424479166667
+      },
+      "runIds": [
+        "growth-20260724-163052-29b11250-5b6b",
+        "growth-20260724-184414-fdf299e3-7e06",
+        "growth-20260724-230351-fdf299e3-980a"
+      ]
+    },
+    {
+      "id": "g3",
+      "label": "p20 / ELS 12",
+      "parallelism": 20,
+      "connectionsPerRunner": 500,
+      "runnersPerNode": 2,
+      "elsReplicas": 12,
+      "averageConnectionsPerElsPod": 833.3333333333334,
+      "requiredRuns": 3,
+      "completedRuns": 3,
+      "primaryP99Ms": {
+        "count": 3,
+        "minimum": 245.0,
+        "median": 283.0,
+        "maximum": 286.0,
+        "mean": 271.3333333333333
+      },
+      "weightedAverageMs": {
+        "count": 3,
+        "minimum": 60.44492,
+        "median": 62.41747,
+        "maximum": 66.52133,
+        "mean": 63.12790666666667
+      },
+      "worstRevisionRunnerP95Ms": {
+        "count": 3,
+        "minimum": 243.0,
+        "median": 274.0,
+        "maximum": 276.04999999999995,
+        "mean": 264.34999999999997
+      },
+      "maximumMs": {
+        "count": 3,
+        "minimum": 247.0,
+        "median": 287.0,
+        "maximum": 290.0,
+        "mean": 274.6666666666667
+      },
+      "over100MsRate": {
+        "count": 3,
+        "minimum": 0.05503,
+        "median": 0.06986,
+        "maximum": 0.13601,
+        "mean": 0.08696666666666668
+      },
+      "allRevisionsBelowThreshold": true,
+      "elsAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 523.7197520000001,
+        "median": 616.833386,
+        "maximum": 683.1076019999999,
+        "mean": 607.8869133333334
+      },
+      "elsAggregatePeakCpuLimitPercent": {
+        "count": 3,
+        "minimum": 4.364331266666667,
+        "median": 5.140278216666667,
+        "maximum": 5.6925633499999995,
+        "mean": 5.065724277777778
+      },
+      "elsAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 1326.81640625,
+        "median": 1333.96875,
+        "maximum": 1338.46875,
+        "mean": 1333.0846354166667
+      },
+      "elsAggregatePeakMemoryLimitPercent": {
+        "count": 3,
+        "minimum": 21.59531911214193,
+        "median": 21.71173095703125,
+        "maximum": 21.78497314453125,
+        "mean": 21.697341071234813
+      },
+      "elsBusiestPodPeakCpuMillicores": {
+        "count": 3,
+        "minimum": 59.267368,
+        "median": 63.439864,
+        "maximum": 68.043677,
+        "mean": 63.58363633333334
+      },
+      "elsBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 122.42578125,
+        "median": 126.48828125,
+        "maximum": 126.51953125,
+        "mean": 125.14453125
+      },
+      "runnerAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 1294.138867,
+        "median": 1408.037487,
+        "maximum": 1991.9719750000004,
+        "mean": 1564.7161096666669
+      },
+      "runnerAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 11320.7734375,
+        "median": 14214.75,
+        "maximum": 14303.421875,
+        "mean": 13279.6484375
+      },
+      "runnerBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 600.6796875,
+        "median": 747.453125,
+        "maximum": 755.15234375,
+        "mean": 701.0950520833334
+      },
+      "runIds": [
+        "growth-20260724-190740-fdf299e3-1ed9",
+        "growth-20260724-205529-fdf299e3-a56c",
+        "growth-20260724-215625-fdf299e3-86ec"
+      ]
+    },
+    {
+      "id": "g4",
+      "label": "p40 / ELS 12",
+      "parallelism": 40,
+      "connectionsPerRunner": 250,
+      "runnersPerNode": 4,
+      "elsReplicas": 12,
+      "averageConnectionsPerElsPod": 833.3333333333334,
+      "requiredRuns": 3,
+      "completedRuns": 3,
+      "primaryP99Ms": {
+        "count": 3,
+        "minimum": 223.0,
+        "median": 309.0,
+        "maximum": 329.0,
+        "mean": 287.0
+      },
+      "weightedAverageMs": {
+        "count": 3,
+        "minimum": 61.63243,
+        "median": 66.84726,
+        "maximum": 76.51401,
+        "mean": 68.33123333333333
+      },
+      "worstRevisionRunnerP95Ms": {
+        "count": 3,
+        "minimum": 222.0,
+        "median": 308.0,
+        "maximum": 327.0,
+        "mean": 285.6666666666667
+      },
+      "maximumMs": {
+        "count": 3,
+        "minimum": 223.0,
+        "median": 309.0,
+        "maximum": 330.0,
+        "mean": 287.3333333333333
+      },
+      "over100MsRate": {
+        "count": 3,
+        "minimum": 0.06624,
+        "median": 0.11315,
+        "maximum": 0.15859,
+        "mean": 0.11266
+      },
+      "allRevisionsBelowThreshold": true,
+      "elsAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 597.904034,
+        "median": 642.518001,
+        "maximum": 687.430974,
+        "mean": 642.6176696666666
+      },
+      "elsAggregatePeakCpuLimitPercent": {
+        "count": 3,
+        "minimum": 4.982533616666667,
+        "median": 5.354316675000001,
+        "maximum": 5.72859145,
+        "mean": 5.355147247222223
+      },
+      "elsAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 1335.00390625,
+        "median": 1344.35546875,
+        "maximum": 1350.83984375,
+        "mean": 1343.3997395833333
+      },
+      "elsAggregatePeakMemoryLimitPercent": {
+        "count": 3,
+        "minimum": 21.728579203287758,
+        "median": 21.880785624186196,
+        "maximum": 21.986325581868492,
+        "mean": 21.86523013644748
+      },
+      "elsBusiestPodPeakCpuMillicores": {
+        "count": 3,
+        "minimum": 64.747075,
+        "median": 67.424515,
+        "maximum": 72.451963,
+        "mean": 68.20785099999999
+      },
+      "elsBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 119.828125,
+        "median": 122.7578125,
+        "maximum": 123.6875,
+        "mean": 122.09114583333333
+      },
+      "runnerAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 866.6333060000002,
+        "median": 1319.729479,
+        "maximum": 2852.144052,
+        "mean": 1679.5022790000003
+      },
+      "runnerAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 11833.2734375,
+        "median": 14617.125,
+        "maximum": 14764.1328125,
+        "mean": 13738.177083333334
+      },
+      "runnerBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 316.875,
+        "median": 382.078125,
+        "maximum": 386.1953125,
+        "mean": 361.7161458333333
+      },
+      "runIds": [
+        "growth-20260724-192754-fdf299e3-0143",
+        "growth-20260724-203146-fdf299e3-c6fc",
+        "growth-20260724-224023-fdf299e3-619d"
+      ]
+    },
+    {
+      "id": "g5",
+      "label": "p20 / ELS 3",
+      "parallelism": 20,
+      "connectionsPerRunner": 500,
+      "runnersPerNode": 2,
+      "elsReplicas": 3,
+      "averageConnectionsPerElsPod": 3333.3333333333335,
+      "requiredRuns": 3,
+      "completedRuns": 3,
+      "primaryP99Ms": {
+        "count": 3,
+        "minimum": 226.01,
+        "median": 266.03999999999996,
+        "maximum": 327.0,
+        "mean": 273.01666666666665
+      },
+      "weightedAverageMs": {
+        "count": 3,
+        "minimum": 71.12417,
+        "median": 71.84825,
+        "maximum": 74.20572,
+        "mean": 72.39271333333333
+      },
+      "worstRevisionRunnerP95Ms": {
+        "count": 3,
+        "minimum": 225.0,
+        "median": 251.0,
+        "maximum": 326.0,
+        "mean": 267.3333333333333
+      },
+      "maximumMs": {
+        "count": 3,
+        "minimum": 227.0,
+        "median": 276.0,
+        "maximum": 328.0,
+        "mean": 277.0
+      },
+      "over100MsRate": {
+        "count": 3,
+        "minimum": 0.1602,
+        "median": 0.16819,
+        "maximum": 0.20911,
+        "mean": 0.17916666666666667
+      },
+      "allRevisionsBelowThreshold": true,
+      "elsAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 306.732863,
+        "median": 317.94184900000005,
+        "maximum": 389.73719400000004,
+        "mean": 338.13730200000003
+      },
+      "elsAggregatePeakCpuLimitPercent": {
+        "count": 3,
+        "minimum": 10.224428766666668,
+        "median": 10.598061633333336,
+        "maximum": 12.9912398,
+        "mean": 11.271243400000001
+      },
+      "elsAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 507.09765625,
+        "median": 507.51171875,
+        "maximum": 510.78125,
+        "mean": 508.4635416666667
+      },
+      "elsAggregatePeakMemoryLimitPercent": {
+        "count": 3,
+        "minimum": 33.014170328776046,
+        "median": 33.041127522786454,
+        "maximum": 33.25398763020833,
+        "mean": 33.10309516059028
+      },
+      "elsBusiestPodPeakCpuMillicores": {
+        "count": 3,
+        "minimum": 110.866806,
+        "median": 115.410919,
+        "maximum": 166.646601,
+        "mean": 130.97477533333333
+      },
+      "elsBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 176.6875,
+        "median": 181.0234375,
+        "maximum": 182.40625,
+        "mean": 180.0390625
+      },
+      "runnerAggregatePeakCpuMillicores": {
+        "count": 3,
+        "minimum": 953.368273,
+        "median": 1574.0370220000002,
+        "maximum": 1760.8324519999999,
+        "mean": 1429.4125823333334
+      },
+      "runnerAggregatePeakMemoryMiB": {
+        "count": 3,
+        "minimum": 11375.63671875,
+        "median": 11517.20703125,
+        "maximum": 14179.05078125,
+        "mean": 12357.298177083334
+      },
+      "runnerBusiestPodPeakMemoryMiB": {
+        "count": 3,
+        "minimum": 606.43359375,
+        "median": 615.42578125,
+        "maximum": 753.16796875,
+        "mean": 658.3424479166666
+      },
+      "runIds": [
+        "growth-20260724-195131-fdf299e3-822a",
+        "growth-20260724-201133-fdf299e3-18ef",
+        "growth-20260724-232714-fdf299e3-a084"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "sequence": 2,
+      "group": "g1",
+      "replicate": 1,
+      "source": "fresh",
+      "runId": "growth-20260724-182116-fdf299e3-1de7",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 65.79727,
+        "runnerP95MinMs": 90.0,
+        "runnerP95MaxMs": 227.0,
+        "runnerP99MinMs": 95.0,
+        "runnerP99MaxMs": 282.0,
+        "worstRevisionRunnerP95Ms": 288.04999999999995,
+        "worstRevisionRunnerP99Ms": 296.0,
+        "maximumMs": 299.0,
+        "over100MsCount": 9028,
+        "over100MsRate": 0.09028,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50998,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 67.3021,
+            "runnerP95MaxMs": 139.04999999999995,
+            "runnerP99MaxMs": 141.0,
+            "maximumMs": 142.0,
+            "over100MsCount": 780,
+            "over100MsRate": 0.078
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 61.9029,
+            "runnerP95MaxMs": 165.0,
+            "runnerP99MaxMs": 169.0,
+            "maximumMs": 170.0,
+            "over100MsCount": 578,
+            "over100MsRate": 0.0578
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 59.4877,
+            "runnerP95MaxMs": 117.0,
+            "runnerP99MaxMs": 118.00999999999999,
+            "maximumMs": 119.0,
+            "over100MsCount": 424,
+            "over100MsRate": 0.0424
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 78.3939,
+            "runnerP95MaxMs": 288.04999999999995,
+            "runnerP99MaxMs": 296.0,
+            "maximumMs": 299.0,
+            "over100MsCount": 1493,
+            "over100MsRate": 0.1493
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 79.8272,
+            "runnerP95MaxMs": 247.04999999999995,
+            "runnerP99MaxMs": 254.01,
+            "maximumMs": 257.0,
+            "over100MsCount": 2189,
+            "over100MsRate": 0.2189
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 62.5755,
+            "runnerP95MaxMs": 128.0,
+            "runnerP99MaxMs": 130.0,
+            "maximumMs": 131.0,
+            "over100MsCount": 463,
+            "over100MsRate": 0.0463
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 58.3867,
+            "runnerP95MaxMs": 167.04999999999995,
+            "runnerP99MaxMs": 179.0,
+            "maximumMs": 180.0,
+            "over100MsCount": 308,
+            "over100MsRate": 0.0308
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 62.4868,
+            "runnerP95MaxMs": 135.0,
+            "runnerP99MaxMs": 137.0,
+            "maximumMs": 139.0,
+            "over100MsCount": 1067,
+            "over100MsRate": 0.1067
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 64.0605,
+            "runnerP95MaxMs": 176.04999999999995,
+            "runnerP99MaxMs": 181.0,
+            "maximumMs": 181.0,
+            "over100MsCount": 849,
+            "over100MsRate": 0.0849
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 63.5494,
+            "runnerP95MaxMs": 286.0,
+            "runnerP99MaxMs": 289.0,
+            "maximumMs": 290.0,
+            "over100MsCount": 877,
+            "over100MsRate": 0.0877
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 162,
+        "els": {
+          "replicas": 6,
+          "aggregatePeakCpuMillicores": 424.56038800000005,
+          "aggregatePeakCpuLimitPercent": 7.0760064666666675,
+          "aggregatePeakMemoryMiB": 798.50390625,
+          "aggregatePeakMemoryLimitPercent": 25.992965698242188,
+          "busiestPodPeakCpuMillicores": 95.461381,
+          "busiestPodPeakMemoryMiB": 145.48046875,
+          "maximumObservedPodCount": 6.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 907.157234,
+          "aggregatePeakMemoryMiB": 11352.484375,
+          "busiestPodPeakCpuMillicores": 57.379514,
+          "busiestPodPeakMemoryMiB": 602.5703125,
+          "maximumObservedPodCount": 20.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 797.4796590000001,
+          "featbitAggregatePeakMemoryMiB": 5993.95703125,
+          "loadgenAggregatePeakCpuMillicores": 1968.316487,
+          "loadgenAggregatePeakMemoryMiB": 27689.19140625
+        }
+      }
+    },
+    {
+      "sequence": 10,
+      "group": "g1",
+      "replicate": 2,
+      "source": "fresh",
+      "runId": "growth-20260724-211542-fdf299e3-2735",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 61.255,
+        "runnerP95MinMs": 91.0,
+        "runnerP95MaxMs": 178.05000000000018,
+        "runnerP99MinMs": 113.01000000000022,
+        "runnerP99MaxMs": 197.0,
+        "worstRevisionRunnerP95Ms": 202.04999999999995,
+        "worstRevisionRunnerP99Ms": 207.01,
+        "maximumMs": 208.0,
+        "over100MsCount": 7543,
+        "over100MsRate": 0.07543,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 51000,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 62.5618,
+            "runnerP95MaxMs": 125.04999999999995,
+            "runnerP99MaxMs": 132.0,
+            "maximumMs": 133.0,
+            "over100MsCount": 1256,
+            "over100MsRate": 0.1256
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 63.4532,
+            "runnerP95MaxMs": 168.0,
+            "runnerP99MaxMs": 181.01,
+            "maximumMs": 185.0,
+            "over100MsCount": 1488,
+            "over100MsRate": 0.1488
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 55.6875,
+            "runnerP95MaxMs": 105.0,
+            "runnerP99MaxMs": 107.0,
+            "maximumMs": 107.0,
+            "over100MsCount": 149,
+            "over100MsRate": 0.0149
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 55.9676,
+            "runnerP95MaxMs": 128.0,
+            "runnerP99MaxMs": 131.0,
+            "maximumMs": 133.0,
+            "over100MsCount": 224,
+            "over100MsRate": 0.0224
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 67.0317,
+            "runnerP95MaxMs": 168.0,
+            "runnerP99MaxMs": 172.0,
+            "maximumMs": 173.0,
+            "over100MsCount": 1722,
+            "over100MsRate": 0.1722
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 57.2912,
+            "runnerP95MaxMs": 202.04999999999995,
+            "runnerP99MaxMs": 207.01,
+            "maximumMs": 208.0,
+            "over100MsCount": 323,
+            "over100MsRate": 0.0323
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 65.1271,
+            "runnerP95MaxMs": 172.0,
+            "runnerP99MaxMs": 177.0,
+            "maximumMs": 179.0,
+            "over100MsCount": 638,
+            "over100MsRate": 0.0638
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 68.6817,
+            "runnerP95MaxMs": 199.0,
+            "runnerP99MaxMs": 200.0,
+            "maximumMs": 201.0,
+            "over100MsCount": 1203,
+            "over100MsRate": 0.1203
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 56.7578,
+            "runnerP95MaxMs": 142.0,
+            "runnerP99MaxMs": 147.0,
+            "maximumMs": 148.0,
+            "over100MsCount": 234,
+            "over100MsRate": 0.0234
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 59.9904,
+            "runnerP95MaxMs": 145.0,
+            "runnerP99MaxMs": 151.0,
+            "maximumMs": 153.0,
+            "over100MsCount": 306,
+            "over100MsRate": 0.0306
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 170,
+        "els": {
+          "replicas": 6,
+          "aggregatePeakCpuMillicores": 539.608675,
+          "aggregatePeakCpuLimitPercent": 8.993477916666667,
+          "aggregatePeakMemoryMiB": 802.68359375,
+          "aggregatePeakMemoryLimitPercent": 26.12902323404948,
+          "busiestPodPeakCpuMillicores": 107.119721,
+          "busiestPodPeakMemoryMiB": 148.65234375,
+          "maximumObservedPodCount": 6.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 2340.820826,
+          "aggregatePeakMemoryMiB": 14138.39453125,
+          "busiestPodPeakCpuMillicores": 172.799084,
+          "busiestPodPeakMemoryMiB": 731.21875,
+          "maximumObservedPodCount": 20.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 957.431593,
+          "featbitAggregatePeakMemoryMiB": 6054.46875,
+          "loadgenAggregatePeakCpuMillicores": 2042.1455699999997,
+          "loadgenAggregatePeakMemoryMiB": 31291.19140625
+        }
+      }
+    },
+    {
+      "sequence": 11,
+      "group": "g1",
+      "replicate": 3,
+      "source": "fresh",
+      "runId": "growth-20260724-213556-fdf299e3-3ff2",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 65.64957,
+        "runnerP95MinMs": 95.0,
+        "runnerP95MaxMs": 196.0,
+        "runnerP99MinMs": 102.01000000000022,
+        "runnerP99MaxMs": 285.02000000000044,
+        "worstRevisionRunnerP95Ms": 294.0,
+        "worstRevisionRunnerP99Ms": 299.0,
+        "maximumMs": 299.0,
+        "over100MsCount": 9989,
+        "over100MsRate": 0.09989,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50998,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 66.5658,
+            "runnerP95MaxMs": 170.0,
+            "runnerP99MaxMs": 174.0,
+            "maximumMs": 175.0,
+            "over100MsCount": 772,
+            "over100MsRate": 0.0772
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 61.6877,
+            "runnerP95MaxMs": 178.0,
+            "runnerP99MaxMs": 186.01,
+            "maximumMs": 188.0,
+            "over100MsCount": 1228,
+            "over100MsRate": 0.1228
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 56.2301,
+            "runnerP95MaxMs": 106.0,
+            "runnerP99MaxMs": 108.0,
+            "maximumMs": 108.0,
+            "over100MsCount": 151,
+            "over100MsRate": 0.0151
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 57.4865,
+            "runnerP95MaxMs": 130.0,
+            "runnerP99MaxMs": 132.01,
+            "maximumMs": 134.0,
+            "over100MsCount": 169,
+            "over100MsRate": 0.0169
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 79.0384,
+            "runnerP95MaxMs": 294.0,
+            "runnerP99MaxMs": 299.0,
+            "maximumMs": 299.0,
+            "over100MsCount": 2366,
+            "over100MsRate": 0.2366
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 68.5293,
+            "runnerP95MaxMs": 219.0,
+            "runnerP99MaxMs": 220.01,
+            "maximumMs": 221.0,
+            "over100MsCount": 985,
+            "over100MsRate": 0.0985
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 60.4592,
+            "runnerP95MaxMs": 162.0,
+            "runnerP99MaxMs": 165.0,
+            "maximumMs": 166.0,
+            "over100MsCount": 602,
+            "over100MsRate": 0.0602
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 73.3793,
+            "runnerP95MaxMs": 205.04999999999995,
+            "runnerP99MaxMs": 213.0,
+            "maximumMs": 215.0,
+            "over100MsCount": 1901,
+            "over100MsRate": 0.1901
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 69.0163,
+            "runnerP95MaxMs": 190.0,
+            "runnerP99MaxMs": 195.0,
+            "maximumMs": 196.0,
+            "over100MsCount": 1095,
+            "over100MsRate": 0.1095
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 64.1031,
+            "runnerP95MaxMs": 219.0,
+            "runnerP99MaxMs": 221.0,
+            "maximumMs": 221.0,
+            "over100MsCount": 720,
+            "over100MsRate": 0.072
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 170,
+        "els": {
+          "replicas": 6,
+          "aggregatePeakCpuMillicores": 443.926934,
+          "aggregatePeakCpuLimitPercent": 7.398782233333334,
+          "aggregatePeakMemoryMiB": 781.85546875,
+          "aggregatePeakMemoryLimitPercent": 25.451024373372395,
+          "busiestPodPeakCpuMillicores": 83.659479,
+          "busiestPodPeakMemoryMiB": 143.17578125,
+          "maximumObservedPodCount": 6.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 776.4818080000001,
+          "aggregatePeakMemoryMiB": 14119.04296875,
+          "busiestPodPeakCpuMillicores": 45.303161,
+          "busiestPodPeakMemoryMiB": 757.16796875,
+          "maximumObservedPodCount": 20.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 900.3254009999998,
+          "featbitAggregatePeakMemoryMiB": 6045.76171875,
+          "loadgenAggregatePeakCpuMillicores": 2076.3596400000006,
+          "loadgenAggregatePeakMemoryMiB": 31275.74609375
+        }
+      }
+    },
+    {
+      "sequence": 1,
+      "group": "g2",
+      "replicate": 1,
+      "source": "existing",
+      "runId": "growth-20260724-163052-29b11250-5b6b",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 64.92102,
+        "runnerP95MinMs": 91.0,
+        "runnerP95MaxMs": 196.0,
+        "runnerP99MinMs": 98.0,
+        "runnerP99MaxMs": 250.0,
+        "worstRevisionRunnerP95Ms": 257.0,
+        "worstRevisionRunnerP99Ms": 262.02,
+        "maximumMs": 264.0,
+        "over100MsCount": 9996,
+        "over100MsRate": 0.09996,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50999,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 59.7827,
+            "runnerP95MaxMs": 132.0,
+            "runnerP99MaxMs": 134.0,
+            "maximumMs": 134.0,
+            "over100MsCount": 331,
+            "over100MsRate": 0.0331
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 67.5676,
+            "runnerP95MaxMs": 132.0,
+            "runnerP99MaxMs": 134.0,
+            "maximumMs": 134.0,
+            "over100MsCount": 881,
+            "over100MsRate": 0.0881
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 58.5912,
+            "runnerP95MaxMs": 140.54999999999998,
+            "runnerP99MaxMs": 144.0,
+            "maximumMs": 145.0,
+            "over100MsCount": 506,
+            "over100MsRate": 0.0506
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 63.0975,
+            "runnerP95MaxMs": 153.0,
+            "runnerP99MaxMs": 154.0,
+            "maximumMs": 154.0,
+            "over100MsCount": 885,
+            "over100MsRate": 0.0885
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 60.8441,
+            "runnerP95MaxMs": 172.0,
+            "runnerP99MaxMs": 173.0,
+            "maximumMs": 173.0,
+            "over100MsCount": 710,
+            "over100MsRate": 0.071
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 68.4319,
+            "runnerP95MaxMs": 215.54999999999998,
+            "runnerP99MaxMs": 217.0,
+            "maximumMs": 217.0,
+            "over100MsCount": 1266,
+            "over100MsRate": 0.1266
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 66.6686,
+            "runnerP95MaxMs": 257.0,
+            "runnerP99MaxMs": 262.02,
+            "maximumMs": 264.0,
+            "over100MsCount": 1231,
+            "over100MsRate": 0.1231
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 64.8261,
+            "runnerP95MaxMs": 168.0,
+            "runnerP99MaxMs": 172.0,
+            "maximumMs": 178.0,
+            "over100MsCount": 1043,
+            "over100MsRate": 0.1043
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 63.2296,
+            "runnerP95MaxMs": 173.54999999999998,
+            "runnerP99MaxMs": 177.51,
+            "maximumMs": 179.0,
+            "over100MsCount": 1084,
+            "over100MsRate": 0.1084
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 76.1709,
+            "runnerP95MaxMs": 209.54999999999998,
+            "runnerP99MaxMs": 215.0,
+            "maximumMs": 216.0,
+            "over100MsCount": 2059,
+            "over100MsRate": 0.2059
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 168,
+        "els": {
+          "replicas": 6,
+          "aggregatePeakCpuMillicores": 382.477306,
+          "aggregatePeakCpuLimitPercent": 6.374621766666666,
+          "aggregatePeakMemoryMiB": 834.13671875,
+          "aggregatePeakMemoryLimitPercent": 27.15288798014323,
+          "busiestPodPeakCpuMillicores": 74.704657,
+          "busiestPodPeakMemoryMiB": 151.90234375,
+          "maximumObservedPodCount": 6.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 1192.0992520000002,
+          "aggregatePeakMemoryMiB": 11099.2265625,
+          "busiestPodPeakCpuMillicores": 49.550418,
+          "busiestPodPeakMemoryMiB": 312.40625,
+          "maximumObservedPodCount": 40.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 829.0707849999999,
+          "featbitAggregatePeakMemoryMiB": 5999.98046875,
+          "loadgenAggregatePeakCpuMillicores": 2280.025908,
+          "loadgenAggregatePeakMemoryMiB": 27373.94140625
+        }
+      }
+    },
+    {
+      "sequence": 3,
+      "group": "g2",
+      "replicate": 2,
+      "source": "fresh",
+      "runId": "growth-20260724-184414-fdf299e3-7e06",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 63.58595,
+        "runnerP95MinMs": 89.0,
+        "runnerP95MaxMs": 206.0,
+        "runnerP99MinMs": 96.00999999999976,
+        "runnerP99MaxMs": 230.0,
+        "worstRevisionRunnerP95Ms": 231.0,
+        "worstRevisionRunnerP99Ms": 233.0,
+        "maximumMs": 233.0,
+        "over100MsCount": 8877,
+        "over100MsRate": 0.08877,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50999,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 59.699,
+            "runnerP95MaxMs": 136.54999999999998,
+            "runnerP99MaxMs": 139.0,
+            "maximumMs": 139.0,
+            "over100MsCount": 488,
+            "over100MsRate": 0.0488
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 62.0729,
+            "runnerP95MaxMs": 137.0,
+            "runnerP99MaxMs": 139.0,
+            "maximumMs": 140.0,
+            "over100MsCount": 538,
+            "over100MsRate": 0.0538
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 57.6039,
+            "runnerP95MaxMs": 152.0,
+            "runnerP99MaxMs": 156.0,
+            "maximumMs": 156.0,
+            "over100MsCount": 310,
+            "over100MsRate": 0.031
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 66.2398,
+            "runnerP95MaxMs": 218.0,
+            "runnerP99MaxMs": 219.0,
+            "maximumMs": 220.0,
+            "over100MsCount": 1186,
+            "over100MsRate": 0.1186
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 64.6286,
+            "runnerP95MaxMs": 231.0,
+            "runnerP99MaxMs": 233.0,
+            "maximumMs": 233.0,
+            "over100MsCount": 834,
+            "over100MsRate": 0.0834
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 64.3276,
+            "runnerP95MaxMs": 182.0,
+            "runnerP99MaxMs": 187.0,
+            "maximumMs": 188.0,
+            "over100MsCount": 1136,
+            "over100MsRate": 0.1136
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 59.8213,
+            "runnerP95MaxMs": 135.09999999999997,
+            "runnerP99MaxMs": 141.0,
+            "maximumMs": 142.0,
+            "over100MsCount": 500,
+            "over100MsRate": 0.05
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 66.9712,
+            "runnerP95MaxMs": 152.0,
+            "runnerP99MaxMs": 153.0,
+            "maximumMs": 153.0,
+            "over100MsCount": 1425,
+            "over100MsRate": 0.1425
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 68.6943,
+            "runnerP95MaxMs": 143.0,
+            "runnerP99MaxMs": 144.0,
+            "maximumMs": 144.0,
+            "over100MsCount": 1236,
+            "over100MsRate": 0.1236
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 65.8009,
+            "runnerP95MaxMs": 191.0,
+            "runnerP99MaxMs": 192.0,
+            "maximumMs": 194.0,
+            "over100MsCount": 1224,
+            "over100MsRate": 0.1224
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 170,
+        "els": {
+          "replicas": 6,
+          "aggregatePeakCpuMillicores": 365.939899,
+          "aggregatePeakCpuLimitPercent": 6.098998316666667,
+          "aggregatePeakMemoryMiB": 774.30078125,
+          "aggregatePeakMemoryLimitPercent": 25.205103556315105,
+          "busiestPodPeakCpuMillicores": 85.656391,
+          "busiestPodPeakMemoryMiB": 141.7265625,
+          "maximumObservedPodCount": 6.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 914.5228529999999,
+          "aggregatePeakMemoryMiB": 11857.9140625,
+          "busiestPodPeakCpuMillicores": 29.125696,
+          "busiestPodPeakMemoryMiB": 322.92578125,
+          "maximumObservedPodCount": 40.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 773.133121,
+          "featbitAggregatePeakMemoryMiB": 5976.88671875,
+          "loadgenAggregatePeakCpuMillicores": 2419.065045,
+          "loadgenAggregatePeakMemoryMiB": 28450.66015625
+        }
+      }
+    },
+    {
+      "sequence": 14,
+      "group": "g2",
+      "replicate": 3,
+      "source": "fresh",
+      "runId": "growth-20260724-230351-fdf299e3-980a",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 63.17256,
+        "runnerP95MinMs": 90.0,
+        "runnerP95MaxMs": 217.04999999999973,
+        "runnerP99MinMs": 95.0,
+        "runnerP99MaxMs": 230.0,
+        "worstRevisionRunnerP95Ms": 231.0,
+        "worstRevisionRunnerP99Ms": 232.0,
+        "maximumMs": 232.0,
+        "over100MsCount": 7652,
+        "over100MsRate": 0.07652,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50998,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 69.7506,
+            "runnerP95MaxMs": 123.0,
+            "runnerP99MaxMs": 125.0,
+            "maximumMs": 125.0,
+            "over100MsCount": 1196,
+            "over100MsRate": 0.1196
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 61.3774,
+            "runnerP95MaxMs": 116.0,
+            "runnerP99MaxMs": 118.0,
+            "maximumMs": 118.0,
+            "over100MsCount": 418,
+            "over100MsRate": 0.0418
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 57.0613,
+            "runnerP95MaxMs": 104.0,
+            "runnerP99MaxMs": 106.0,
+            "maximumMs": 106.0,
+            "over100MsCount": 121,
+            "over100MsRate": 0.0121
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 70.0291,
+            "runnerP95MaxMs": 215.54999999999998,
+            "runnerP99MaxMs": 219.0,
+            "maximumMs": 222.0,
+            "over100MsCount": 1749,
+            "over100MsRate": 0.1749
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 58.4893,
+            "runnerP95MaxMs": 123.0,
+            "runnerP99MaxMs": 124.50999999999999,
+            "maximumMs": 125.0,
+            "over100MsCount": 278,
+            "over100MsRate": 0.0278
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 64.242,
+            "runnerP95MaxMs": 156.0,
+            "runnerP99MaxMs": 156.0,
+            "maximumMs": 156.0,
+            "over100MsCount": 922,
+            "over100MsRate": 0.0922
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 64.4443,
+            "runnerP95MaxMs": 231.0,
+            "runnerP99MaxMs": 232.0,
+            "maximumMs": 232.0,
+            "over100MsCount": 914,
+            "over100MsRate": 0.0914
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 63.4742,
+            "runnerP95MaxMs": 163.0,
+            "runnerP99MaxMs": 165.51,
+            "maximumMs": 166.0,
+            "over100MsCount": 697,
+            "over100MsRate": 0.0697
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 62.8029,
+            "runnerP95MaxMs": 156.0,
+            "runnerP99MaxMs": 156.51,
+            "maximumMs": 157.0,
+            "over100MsCount": 595,
+            "over100MsRate": 0.0595
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 60.0545,
+            "runnerP95MaxMs": 138.0,
+            "runnerP99MaxMs": 140.0,
+            "maximumMs": 143.0,
+            "over100MsCount": 762,
+            "over100MsRate": 0.0762
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 171,
+        "els": {
+          "replicas": 6,
+          "aggregatePeakCpuMillicores": 484.273122,
+          "aggregatePeakCpuLimitPercent": 8.071218700000001,
+          "aggregatePeakMemoryMiB": 793.078125,
+          "aggregatePeakMemoryLimitPercent": 25.81634521484375,
+          "busiestPodPeakCpuMillicores": 101.305101,
+          "busiestPodPeakMemoryMiB": 146.8671875,
+          "maximumObservedPodCount": 6.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 1703.9717729999998,
+          "aggregatePeakMemoryMiB": 14806.98828125,
+          "busiestPodPeakCpuMillicores": 99.186908,
+          "busiestPodPeakMemoryMiB": 390.1953125,
+          "maximumObservedPodCount": 40.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 920.3296949999999,
+          "featbitAggregatePeakMemoryMiB": 6082.4609375,
+          "loadgenAggregatePeakCpuMillicores": 2470.0131489999994,
+          "loadgenAggregatePeakMemoryMiB": 32821.2890625
+        }
+      }
+    },
+    {
+      "sequence": 4,
+      "group": "g3",
+      "replicate": 1,
+      "source": "fresh",
+      "runId": "growth-20260724-190740-fdf299e3-1ed9",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 62.41747,
+        "runnerP95MinMs": 86.05000000000018,
+        "runnerP95MaxMs": 164.0,
+        "runnerP99MinMs": 94.0,
+        "runnerP99MaxMs": 262.0,
+        "worstRevisionRunnerP95Ms": 274.0,
+        "worstRevisionRunnerP99Ms": 283.0,
+        "maximumMs": 290.0,
+        "over100MsCount": 6986,
+        "over100MsRate": 0.06986,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50999,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 63.1685,
+            "runnerP95MaxMs": 172.0,
+            "runnerP99MaxMs": 177.0,
+            "maximumMs": 179.0,
+            "over100MsCount": 547,
+            "over100MsRate": 0.0547
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 58.3281,
+            "runnerP95MaxMs": 127.0,
+            "runnerP99MaxMs": 131.0,
+            "maximumMs": 133.0,
+            "over100MsCount": 178,
+            "over100MsRate": 0.0178
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 68.7179,
+            "runnerP95MaxMs": 165.04999999999995,
+            "runnerP99MaxMs": 168.0,
+            "maximumMs": 169.0,
+            "over100MsCount": 1159,
+            "over100MsRate": 0.1159
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 61.1463,
+            "runnerP95MaxMs": 202.0,
+            "runnerP99MaxMs": 204.0,
+            "maximumMs": 204.0,
+            "over100MsCount": 429,
+            "over100MsRate": 0.0429
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 67.0282,
+            "runnerP95MaxMs": 274.0,
+            "runnerP99MaxMs": 283.0,
+            "maximumMs": 290.0,
+            "over100MsCount": 1511,
+            "over100MsRate": 0.1511
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 58.0223,
+            "runnerP95MaxMs": 153.04999999999995,
+            "runnerP99MaxMs": 162.01,
+            "maximumMs": 166.0,
+            "over100MsCount": 325,
+            "over100MsRate": 0.0325
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 61.9119,
+            "runnerP95MaxMs": 236.0,
+            "runnerP99MaxMs": 241.01,
+            "maximumMs": 243.0,
+            "over100MsCount": 625,
+            "over100MsRate": 0.0625
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 59.7923,
+            "runnerP95MaxMs": 148.04999999999995,
+            "runnerP99MaxMs": 152.0,
+            "maximumMs": 153.0,
+            "over100MsCount": 555,
+            "over100MsRate": 0.0555
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 62.4391,
+            "runnerP95MaxMs": 167.0,
+            "runnerP99MaxMs": 172.0,
+            "maximumMs": 173.0,
+            "over100MsCount": 933,
+            "over100MsRate": 0.0933
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 63.6201,
+            "runnerP95MaxMs": 217.0,
+            "runnerP99MaxMs": 219.0,
+            "maximumMs": 220.0,
+            "over100MsCount": 724,
+            "over100MsRate": 0.0724
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 170,
+        "els": {
+          "replicas": 12,
+          "aggregatePeakCpuMillicores": 683.1076019999999,
+          "aggregatePeakCpuLimitPercent": 5.6925633499999995,
+          "aggregatePeakMemoryMiB": 1338.46875,
+          "aggregatePeakMemoryLimitPercent": 21.78497314453125,
+          "busiestPodPeakCpuMillicores": 63.439864,
+          "busiestPodPeakMemoryMiB": 122.42578125,
+          "maximumObservedPodCount": 12.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 1991.9719750000004,
+          "aggregatePeakMemoryMiB": 11320.7734375,
+          "busiestPodPeakCpuMillicores": 133.805241,
+          "busiestPodPeakMemoryMiB": 600.6796875,
+          "maximumObservedPodCount": 20.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 1156.335506,
+          "featbitAggregatePeakMemoryMiB": 6586.828125,
+          "loadgenAggregatePeakCpuMillicores": 2008.811234,
+          "loadgenAggregatePeakMemoryMiB": 27786.6328125
+        }
+      }
+    },
+    {
+      "sequence": 9,
+      "group": "g3",
+      "replicate": 2,
+      "source": "fresh",
+      "runId": "growth-20260724-205529-fdf299e3-a56c",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 60.44492,
+        "runnerP95MinMs": 85.0,
+        "runnerP95MaxMs": 222.0,
+        "runnerP99MinMs": 95.0,
+        "runnerP99MaxMs": 241.0,
+        "worstRevisionRunnerP95Ms": 243.0,
+        "worstRevisionRunnerP99Ms": 245.0,
+        "maximumMs": 247.0,
+        "over100MsCount": 5503,
+        "over100MsRate": 0.05503,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 51000,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 56.5504,
+            "runnerP95MaxMs": 121.0,
+            "runnerP99MaxMs": 124.0,
+            "maximumMs": 125.0,
+            "over100MsCount": 402,
+            "over100MsRate": 0.0402
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 61.0252,
+            "runnerP95MaxMs": 217.04999999999995,
+            "runnerP99MaxMs": 224.01,
+            "maximumMs": 227.0,
+            "over100MsCount": 998,
+            "over100MsRate": 0.0998
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 59.196,
+            "runnerP95MaxMs": 117.0,
+            "runnerP99MaxMs": 121.0,
+            "maximumMs": 122.0,
+            "over100MsCount": 302,
+            "over100MsRate": 0.0302
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 56.394,
+            "runnerP95MaxMs": 118.0,
+            "runnerP99MaxMs": 122.0,
+            "maximumMs": 123.0,
+            "over100MsCount": 169,
+            "over100MsRate": 0.0169
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 69.9758,
+            "runnerP95MaxMs": 183.04999999999995,
+            "runnerP99MaxMs": 187.0,
+            "maximumMs": 188.0,
+            "over100MsCount": 1435,
+            "over100MsRate": 0.1435
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 59.3105,
+            "runnerP95MaxMs": 216.0,
+            "runnerP99MaxMs": 223.0,
+            "maximumMs": 227.0,
+            "over100MsCount": 450,
+            "over100MsRate": 0.045
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 59.4856,
+            "runnerP95MaxMs": 115.0,
+            "runnerP99MaxMs": 116.0,
+            "maximumMs": 117.0,
+            "over100MsCount": 315,
+            "over100MsRate": 0.0315
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 56.4302,
+            "runnerP95MaxMs": 101.0,
+            "runnerP99MaxMs": 104.0,
+            "maximumMs": 104.0,
+            "over100MsCount": 28,
+            "over100MsRate": 0.0028
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 58.5083,
+            "runnerP95MaxMs": 105.0,
+            "runnerP99MaxMs": 107.0,
+            "maximumMs": 107.0,
+            "over100MsCount": 183,
+            "over100MsRate": 0.0183
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 67.5732,
+            "runnerP95MaxMs": 243.0,
+            "runnerP99MaxMs": 245.0,
+            "maximumMs": 247.0,
+            "over100MsCount": 1221,
+            "over100MsRate": 0.1221
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 170,
+        "els": {
+          "replicas": 12,
+          "aggregatePeakCpuMillicores": 616.833386,
+          "aggregatePeakCpuLimitPercent": 5.140278216666667,
+          "aggregatePeakMemoryMiB": 1333.96875,
+          "aggregatePeakMemoryLimitPercent": 21.71173095703125,
+          "busiestPodPeakCpuMillicores": 68.043677,
+          "busiestPodPeakMemoryMiB": 126.51953125,
+          "maximumObservedPodCount": 12.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 1408.037487,
+          "aggregatePeakMemoryMiB": 14303.421875,
+          "busiestPodPeakCpuMillicores": 108.817141,
+          "busiestPodPeakMemoryMiB": 747.453125,
+          "maximumObservedPodCount": 20.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 1057.37256,
+          "featbitAggregatePeakMemoryMiB": 6628.84765625,
+          "loadgenAggregatePeakCpuMillicores": 2093.087634,
+          "loadgenAggregatePeakMemoryMiB": 31390.109375
+        }
+      }
+    },
+    {
+      "sequence": 12,
+      "group": "g3",
+      "replicate": 3,
+      "source": "fresh",
+      "runId": "growth-20260724-215625-fdf299e3-86ec",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 66.52133,
+        "runnerP95MinMs": 106.0,
+        "runnerP95MaxMs": 154.0,
+        "runnerP99MinMs": 128.0,
+        "runnerP99MaxMs": 249.01000000000022,
+        "worstRevisionRunnerP95Ms": 276.04999999999995,
+        "worstRevisionRunnerP99Ms": 286.0,
+        "maximumMs": 287.0,
+        "over100MsCount": 13601,
+        "over100MsRate": 0.13601,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 51000,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 55.8366,
+            "runnerP95MaxMs": 101.0,
+            "runnerP99MaxMs": 104.0,
+            "maximumMs": 104.0,
+            "over100MsCount": 64,
+            "over100MsRate": 0.0064
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 69.4706,
+            "runnerP95MaxMs": 205.04999999999995,
+            "runnerP99MaxMs": 213.0,
+            "maximumMs": 215.0,
+            "over100MsCount": 2036,
+            "over100MsRate": 0.2036
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 56.4337,
+            "runnerP95MaxMs": 103.04999999999995,
+            "runnerP99MaxMs": 105.0,
+            "maximumMs": 105.0,
+            "over100MsCount": 99,
+            "over100MsRate": 0.0099
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 63.3197,
+            "runnerP95MaxMs": 213.0,
+            "runnerP99MaxMs": 220.0,
+            "maximumMs": 223.0,
+            "over100MsCount": 606,
+            "over100MsRate": 0.0606
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 64.5258,
+            "runnerP95MaxMs": 171.0,
+            "runnerP99MaxMs": 174.0,
+            "maximumMs": 175.0,
+            "over100MsCount": 1116,
+            "over100MsRate": 0.1116
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 113.1167,
+            "runnerP95MaxMs": 276.04999999999995,
+            "runnerP99MaxMs": 286.0,
+            "maximumMs": 287.0,
+            "over100MsCount": 6684,
+            "over100MsRate": 0.6684
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 59.7656,
+            "runnerP95MaxMs": 145.0,
+            "runnerP99MaxMs": 148.0,
+            "maximumMs": 149.0,
+            "over100MsCount": 638,
+            "over100MsRate": 0.0638
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 59.7516,
+            "runnerP95MaxMs": 158.0,
+            "runnerP99MaxMs": 162.0,
+            "maximumMs": 163.0,
+            "over100MsCount": 789,
+            "over100MsRate": 0.0789
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 60.5919,
+            "runnerP95MaxMs": 178.04999999999995,
+            "runnerP99MaxMs": 183.0,
+            "maximumMs": 184.0,
+            "over100MsCount": 642,
+            "over100MsRate": 0.0642
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 62.4011,
+            "runnerP95MaxMs": 177.0,
+            "runnerP99MaxMs": 181.01,
+            "maximumMs": 183.0,
+            "over100MsCount": 927,
+            "over100MsRate": 0.0927
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 170,
+        "els": {
+          "replicas": 12,
+          "aggregatePeakCpuMillicores": 523.7197520000001,
+          "aggregatePeakCpuLimitPercent": 4.364331266666667,
+          "aggregatePeakMemoryMiB": 1326.81640625,
+          "aggregatePeakMemoryLimitPercent": 21.59531911214193,
+          "busiestPodPeakCpuMillicores": 59.267368,
+          "busiestPodPeakMemoryMiB": 126.48828125,
+          "maximumObservedPodCount": 12.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 1294.138867,
+          "aggregatePeakMemoryMiB": 14214.75,
+          "busiestPodPeakCpuMillicores": 83.362749,
+          "busiestPodPeakMemoryMiB": 755.15234375,
+          "maximumObservedPodCount": 20.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 1005.626135,
+          "featbitAggregatePeakMemoryMiB": 6617.59765625,
+          "loadgenAggregatePeakCpuMillicores": 2131.294792,
+          "loadgenAggregatePeakMemoryMiB": 31525.58984375
+        }
+      }
+    },
+    {
+      "sequence": 5,
+      "group": "g4",
+      "replicate": 1,
+      "source": "fresh",
+      "runId": "growth-20260724-192754-fdf299e3-0143",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 66.84726,
+        "runnerP95MinMs": 94.0,
+        "runnerP95MaxMs": 199.04999999999973,
+        "runnerP99MinMs": 99.0,
+        "runnerP99MaxMs": 306.0,
+        "worstRevisionRunnerP95Ms": 308.0,
+        "worstRevisionRunnerP99Ms": 309.0,
+        "maximumMs": 309.0,
+        "over100MsCount": 11315,
+        "over100MsRate": 0.11315,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50999,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 85.9762,
+            "runnerP95MaxMs": 168.0,
+            "runnerP99MaxMs": 180.51,
+            "maximumMs": 192.0,
+            "over100MsCount": 3183,
+            "over100MsRate": 0.3183
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 65.9334,
+            "runnerP95MaxMs": 139.0,
+            "runnerP99MaxMs": 142.0,
+            "maximumMs": 143.0,
+            "over100MsCount": 916,
+            "over100MsRate": 0.0916
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 62.2585,
+            "runnerP95MaxMs": 116.0,
+            "runnerP99MaxMs": 117.0,
+            "maximumMs": 117.0,
+            "over100MsCount": 579,
+            "over100MsRate": 0.0579
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 60.6155,
+            "runnerP95MaxMs": 151.54999999999998,
+            "runnerP99MaxMs": 155.51,
+            "maximumMs": 156.0,
+            "over100MsCount": 530,
+            "over100MsRate": 0.053
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 61.1691,
+            "runnerP95MaxMs": 159.0,
+            "runnerP99MaxMs": 161.51,
+            "maximumMs": 163.0,
+            "over100MsCount": 607,
+            "over100MsRate": 0.0607
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 65.3753,
+            "runnerP95MaxMs": 218.0,
+            "runnerP99MaxMs": 219.51,
+            "maximumMs": 220.0,
+            "over100MsCount": 784,
+            "over100MsRate": 0.0784
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 70.7544,
+            "runnerP95MaxMs": 308.0,
+            "runnerP99MaxMs": 309.0,
+            "maximumMs": 309.0,
+            "over100MsCount": 1318,
+            "over100MsRate": 0.1318
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 68.274,
+            "runnerP95MaxMs": 225.0,
+            "runnerP99MaxMs": 226.0,
+            "maximumMs": 226.0,
+            "over100MsCount": 1249,
+            "over100MsRate": 0.1249
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 66.9498,
+            "runnerP95MaxMs": 216.0,
+            "runnerP99MaxMs": 218.51,
+            "maximumMs": 224.0,
+            "over100MsCount": 1380,
+            "over100MsRate": 0.138
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 61.1664,
+            "runnerP95MaxMs": 152.54999999999998,
+            "runnerP99MaxMs": 158.0,
+            "maximumMs": 159.0,
+            "over100MsCount": 769,
+            "over100MsRate": 0.0769
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 170,
+        "els": {
+          "replicas": 12,
+          "aggregatePeakCpuMillicores": 642.518001,
+          "aggregatePeakCpuLimitPercent": 5.354316675000001,
+          "aggregatePeakMemoryMiB": 1335.00390625,
+          "aggregatePeakMemoryLimitPercent": 21.728579203287758,
+          "busiestPodPeakCpuMillicores": 67.424515,
+          "busiestPodPeakMemoryMiB": 123.6875,
+          "maximumObservedPodCount": 12.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 866.6333060000002,
+          "aggregatePeakMemoryMiB": 11833.2734375,
+          "busiestPodPeakCpuMillicores": 24.566292,
+          "busiestPodPeakMemoryMiB": 316.875,
+          "maximumObservedPodCount": 40.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 1140.963553,
+          "featbitAggregatePeakMemoryMiB": 6611.14453125,
+          "loadgenAggregatePeakCpuMillicores": 2095.075558,
+          "loadgenAggregatePeakMemoryMiB": 28530.26953125
+        }
+      }
+    },
+    {
+      "sequence": 8,
+      "group": "g4",
+      "replicate": 2,
+      "source": "fresh",
+      "runId": "growth-20260724-203146-fdf299e3-c6fc",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 76.51401,
+        "runnerP95MinMs": 182.0,
+        "runnerP95MaxMs": 254.14999999999918,
+        "runnerP99MinMs": 206.00999999999976,
+        "runnerP99MaxMs": 323.00999999999976,
+        "worstRevisionRunnerP95Ms": 327.0,
+        "worstRevisionRunnerP99Ms": 329.0,
+        "maximumMs": 330.0,
+        "over100MsCount": 15859,
+        "over100MsRate": 0.15859,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50998,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 55.874,
+            "runnerP95MaxMs": 115.0,
+            "runnerP99MaxMs": 118.0,
+            "maximumMs": 121.0,
+            "over100MsCount": 196,
+            "over100MsRate": 0.0196
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 60.2123,
+            "runnerP95MaxMs": 109.54999999999998,
+            "runnerP99MaxMs": 113.0,
+            "maximumMs": 114.0,
+            "over100MsCount": 305,
+            "over100MsRate": 0.0305
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 61.1357,
+            "runnerP95MaxMs": 103.0,
+            "runnerP99MaxMs": 104.0,
+            "maximumMs": 105.0,
+            "over100MsCount": 173,
+            "over100MsRate": 0.0173
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 204.0049,
+            "runnerP95MaxMs": 327.0,
+            "runnerP99MaxMs": 329.0,
+            "maximumMs": 330.0,
+            "over100MsCount": 10000,
+            "over100MsRate": 1.0
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 59.3519,
+            "runnerP95MaxMs": 104.0,
+            "runnerP99MaxMs": 105.0,
+            "maximumMs": 105.0,
+            "over100MsCount": 166,
+            "over100MsRate": 0.0166
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 76.1216,
+            "runnerP95MaxMs": 166.54999999999998,
+            "runnerP99MaxMs": 172.0,
+            "maximumMs": 173.0,
+            "over100MsCount": 2047,
+            "over100MsRate": 0.2047
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 64.6809,
+            "runnerP95MaxMs": 210.0,
+            "runnerP99MaxMs": 211.0,
+            "maximumMs": 211.0,
+            "over100MsCount": 1047,
+            "over100MsRate": 0.1047
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 60.0149,
+            "runnerP95MaxMs": 117.0,
+            "runnerP99MaxMs": 124.50999999999999,
+            "maximumMs": 126.0,
+            "over100MsCount": 252,
+            "over100MsRate": 0.0252
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 61.3256,
+            "runnerP95MaxMs": 192.0,
+            "runnerP99MaxMs": 193.0,
+            "maximumMs": 193.0,
+            "over100MsCount": 663,
+            "over100MsRate": 0.0663
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 62.4183,
+            "runnerP95MaxMs": 175.0,
+            "runnerP99MaxMs": 175.51,
+            "maximumMs": 176.0,
+            "over100MsCount": 1010,
+            "over100MsRate": 0.101
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 170,
+        "els": {
+          "replicas": 12,
+          "aggregatePeakCpuMillicores": 687.430974,
+          "aggregatePeakCpuLimitPercent": 5.72859145,
+          "aggregatePeakMemoryMiB": 1350.83984375,
+          "aggregatePeakMemoryLimitPercent": 21.986325581868492,
+          "busiestPodPeakCpuMillicores": 72.451963,
+          "busiestPodPeakMemoryMiB": 119.828125,
+          "maximumObservedPodCount": 12.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 2852.144052,
+          "aggregatePeakMemoryMiB": 14617.125,
+          "busiestPodPeakCpuMillicores": 91.814449,
+          "busiestPodPeakMemoryMiB": 386.1953125,
+          "maximumObservedPodCount": 40.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 1164.422863,
+          "featbitAggregatePeakMemoryMiB": 6623.4375,
+          "loadgenAggregatePeakCpuMillicores": 2239.46277,
+          "loadgenAggregatePeakMemoryMiB": 31705.2421875
+        }
+      }
+    },
+    {
+      "sequence": 13,
+      "group": "g4",
+      "replicate": 3,
+      "source": "fresh",
+      "runId": "growth-20260724-224023-fdf299e3-619d",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 61.63243,
+        "runnerP95MinMs": 87.0,
+        "runnerP95MaxMs": 206.0,
+        "runnerP99MinMs": 92.00999999999976,
+        "runnerP99MaxMs": 221.0,
+        "worstRevisionRunnerP95Ms": 222.0,
+        "worstRevisionRunnerP99Ms": 223.0,
+        "maximumMs": 223.0,
+        "over100MsCount": 6624,
+        "over100MsRate": 0.06624,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50998,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 57.5773,
+            "runnerP95MaxMs": 115.0,
+            "runnerP99MaxMs": 116.0,
+            "maximumMs": 117.0,
+            "over100MsCount": 191,
+            "over100MsRate": 0.0191
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 60.6772,
+            "runnerP95MaxMs": 142.0,
+            "runnerP99MaxMs": 143.0,
+            "maximumMs": 143.0,
+            "over100MsCount": 693,
+            "over100MsRate": 0.0693
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 56.8418,
+            "runnerP95MaxMs": 116.0,
+            "runnerP99MaxMs": 118.50999999999999,
+            "maximumMs": 119.0,
+            "over100MsCount": 78,
+            "over100MsRate": 0.0078
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 62.3621,
+            "runnerP95MaxMs": 200.54999999999998,
+            "runnerP99MaxMs": 204.51,
+            "maximumMs": 208.0,
+            "over100MsCount": 967,
+            "over100MsRate": 0.0967
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 62.4964,
+            "runnerP95MaxMs": 113.0,
+            "runnerP99MaxMs": 114.0,
+            "maximumMs": 116.0,
+            "over100MsCount": 619,
+            "over100MsRate": 0.0619
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 60.984,
+            "runnerP95MaxMs": 163.0,
+            "runnerP99MaxMs": 167.0,
+            "maximumMs": 168.0,
+            "over100MsCount": 820,
+            "over100MsRate": 0.082
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 61.7996,
+            "runnerP95MaxMs": 117.0,
+            "runnerP99MaxMs": 119.0,
+            "maximumMs": 119.0,
+            "over100MsCount": 446,
+            "over100MsRate": 0.0446
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 61.4782,
+            "runnerP95MaxMs": 124.0,
+            "runnerP99MaxMs": 126.0,
+            "maximumMs": 126.0,
+            "over100MsCount": 763,
+            "over100MsRate": 0.0763
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 67.1992,
+            "runnerP95MaxMs": 139.0,
+            "runnerP99MaxMs": 141.0,
+            "maximumMs": 141.0,
+            "over100MsCount": 969,
+            "over100MsRate": 0.0969
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 64.9085,
+            "runnerP95MaxMs": 222.0,
+            "runnerP99MaxMs": 223.0,
+            "maximumMs": 223.0,
+            "over100MsCount": 1078,
+            "over100MsRate": 0.1078
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 171,
+        "els": {
+          "replicas": 12,
+          "aggregatePeakCpuMillicores": 597.904034,
+          "aggregatePeakCpuLimitPercent": 4.982533616666667,
+          "aggregatePeakMemoryMiB": 1344.35546875,
+          "aggregatePeakMemoryLimitPercent": 21.880785624186196,
+          "busiestPodPeakCpuMillicores": 64.747075,
+          "busiestPodPeakMemoryMiB": 122.7578125,
+          "maximumObservedPodCount": 12.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 1319.729479,
+          "aggregatePeakMemoryMiB": 14764.1328125,
+          "busiestPodPeakCpuMillicores": 43.717318,
+          "busiestPodPeakMemoryMiB": 382.078125,
+          "maximumObservedPodCount": 40.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 906.531299,
+          "featbitAggregatePeakMemoryMiB": 6653.53515625,
+          "loadgenAggregatePeakCpuMillicores": 2506.0357169999997,
+          "loadgenAggregatePeakMemoryMiB": 32715.4375
+        }
+      }
+    },
+    {
+      "sequence": 6,
+      "group": "g5",
+      "replicate": 1,
+      "source": "fresh",
+      "runId": "growth-20260724-195131-fdf299e3-822a",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 71.84825,
+        "runnerP95MinMs": 104.0,
+        "runnerP95MaxMs": 288.10000000000036,
+        "runnerP99MinMs": 112.0,
+        "runnerP99MaxMs": 324.0,
+        "worstRevisionRunnerP95Ms": 326.0,
+        "worstRevisionRunnerP99Ms": 327.0,
+        "maximumMs": 328.0,
+        "over100MsCount": 16819,
+        "over100MsRate": 0.16819,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 51000,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 57.7529,
+            "runnerP95MaxMs": 124.0,
+            "runnerP99MaxMs": 129.0,
+            "maximumMs": 130.0,
+            "over100MsCount": 288,
+            "over100MsRate": 0.0288
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 69.5806,
+            "runnerP95MaxMs": 126.0,
+            "runnerP99MaxMs": 128.0,
+            "maximumMs": 128.0,
+            "over100MsCount": 2088,
+            "over100MsRate": 0.2088
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 56.7368,
+            "runnerP95MaxMs": 130.0,
+            "runnerP99MaxMs": 132.0,
+            "maximumMs": 134.0,
+            "over100MsCount": 318,
+            "over100MsRate": 0.0318
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 82.9512,
+            "runnerP95MaxMs": 199.0,
+            "runnerP99MaxMs": 205.0,
+            "maximumMs": 206.0,
+            "over100MsCount": 3052,
+            "over100MsRate": 0.3052
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 60.9967,
+            "runnerP95MaxMs": 118.0,
+            "runnerP99MaxMs": 120.0,
+            "maximumMs": 121.0,
+            "over100MsCount": 649,
+            "over100MsRate": 0.0649
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 58.4331,
+            "runnerP95MaxMs": 126.0,
+            "runnerP99MaxMs": 128.0,
+            "maximumMs": 128.0,
+            "over100MsCount": 472,
+            "over100MsRate": 0.0472
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 85.0086,
+            "runnerP95MaxMs": 288.0,
+            "runnerP99MaxMs": 290.0,
+            "maximumMs": 292.0,
+            "over100MsCount": 2609,
+            "over100MsRate": 0.2609
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 87.7506,
+            "runnerP95MaxMs": 326.0,
+            "runnerP99MaxMs": 327.0,
+            "maximumMs": 328.0,
+            "over100MsCount": 2378,
+            "over100MsRate": 0.2378
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 90.2509,
+            "runnerP95MaxMs": 202.04999999999995,
+            "runnerP99MaxMs": 208.0,
+            "maximumMs": 210.0,
+            "over100MsCount": 3712,
+            "over100MsRate": 0.3712
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 69.0211,
+            "runnerP95MaxMs": 292.0,
+            "runnerP99MaxMs": 302.0,
+            "maximumMs": 303.0,
+            "over100MsCount": 1253,
+            "over100MsRate": 0.1253
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 167,
+        "els": {
+          "replicas": 3,
+          "aggregatePeakCpuMillicores": 317.94184900000005,
+          "aggregatePeakCpuLimitPercent": 10.598061633333336,
+          "aggregatePeakMemoryMiB": 507.09765625,
+          "aggregatePeakMemoryLimitPercent": 33.014170328776046,
+          "busiestPodPeakCpuMillicores": 115.410919,
+          "busiestPodPeakMemoryMiB": 176.6875,
+          "maximumObservedPodCount": 3.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 1574.0370220000002,
+          "aggregatePeakMemoryMiB": 11375.63671875,
+          "busiestPodPeakCpuMillicores": 131.918259,
+          "busiestPodPeakMemoryMiB": 606.43359375,
+          "maximumObservedPodCount": 20.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 742.407637,
+          "featbitAggregatePeakMemoryMiB": 5724.98046875,
+          "loadgenAggregatePeakCpuMillicores": 2025.6869860000002,
+          "loadgenAggregatePeakMemoryMiB": 27957.5703125
+        }
+      }
+    },
+    {
+      "sequence": 7,
+      "group": "g5",
+      "replicate": 2,
+      "source": "fresh",
+      "runId": "growth-20260724-201133-fdf299e3-18ef",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 74.20572,
+        "runnerP95MinMs": 112.0,
+        "runnerP95MaxMs": 181.0,
+        "runnerP99MinMs": 136.0,
+        "runnerP99MaxMs": 223.0,
+        "worstRevisionRunnerP95Ms": 225.0,
+        "worstRevisionRunnerP99Ms": 226.01,
+        "maximumMs": 227.0,
+        "over100MsCount": 20911,
+        "over100MsRate": 0.20911,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 51001,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 63.1218,
+            "runnerP95MaxMs": 127.04999999999995,
+            "runnerP99MaxMs": 132.0,
+            "maximumMs": 133.0,
+            "over100MsCount": 1556,
+            "over100MsRate": 0.1556
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 102.6067,
+            "runnerP95MaxMs": 151.0,
+            "runnerP99MaxMs": 159.01,
+            "maximumMs": 161.0,
+            "over100MsCount": 5116,
+            "over100MsRate": 0.5116
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 66.8799,
+            "runnerP95MaxMs": 175.04999999999995,
+            "runnerP99MaxMs": 180.0,
+            "maximumMs": 181.0,
+            "over100MsCount": 1493,
+            "over100MsRate": 0.1493
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 86.0583,
+            "runnerP95MaxMs": 213.0,
+            "runnerP99MaxMs": 215.0,
+            "maximumMs": 215.0,
+            "over100MsCount": 3299,
+            "over100MsRate": 0.3299
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 58.283,
+            "runnerP95MaxMs": 151.0,
+            "runnerP99MaxMs": 156.01,
+            "maximumMs": 158.0,
+            "over100MsCount": 492,
+            "over100MsRate": 0.0492
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 61.9831,
+            "runnerP95MaxMs": 202.0,
+            "runnerP99MaxMs": 203.0,
+            "maximumMs": 204.0,
+            "over100MsCount": 857,
+            "over100MsRate": 0.0857
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 84.2844,
+            "runnerP95MaxMs": 225.0,
+            "runnerP99MaxMs": 226.01,
+            "maximumMs": 227.0,
+            "over100MsCount": 2983,
+            "over100MsRate": 0.2983
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 66.1829,
+            "runnerP95MaxMs": 132.0,
+            "runnerP99MaxMs": 136.0,
+            "maximumMs": 137.0,
+            "over100MsCount": 890,
+            "over100MsRate": 0.089
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 87.2079,
+            "runnerP95MaxMs": 162.0,
+            "runnerP99MaxMs": 166.01,
+            "maximumMs": 168.0,
+            "over100MsCount": 3412,
+            "over100MsRate": 0.3412
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 65.4492,
+            "runnerP95MaxMs": 141.0999999999999,
+            "runnerP99MaxMs": 165.01999999999998,
+            "maximumMs": 170.0,
+            "over100MsCount": 813,
+            "over100MsRate": 0.0813
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 168,
+        "els": {
+          "replicas": 3,
+          "aggregatePeakCpuMillicores": 389.73719400000004,
+          "aggregatePeakCpuLimitPercent": 12.9912398,
+          "aggregatePeakMemoryMiB": 510.78125,
+          "aggregatePeakMemoryLimitPercent": 33.25398763020833,
+          "busiestPodPeakCpuMillicores": 166.646601,
+          "busiestPodPeakMemoryMiB": 181.0234375,
+          "maximumObservedPodCount": 3.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 1760.8324519999999,
+          "aggregatePeakMemoryMiB": 11517.20703125,
+          "busiestPodPeakCpuMillicores": 155.314309,
+          "busiestPodPeakMemoryMiB": 615.42578125,
+          "maximumObservedPodCount": 20.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 807.336781,
+          "featbitAggregatePeakMemoryMiB": 5724.47265625,
+          "loadgenAggregatePeakCpuMillicores": 2055.216736,
+          "loadgenAggregatePeakMemoryMiB": 28328.1015625
+        }
+      }
+    },
+    {
+      "sequence": 15,
+      "group": "g5",
+      "replicate": 3,
+      "source": "fresh",
+      "runId": "growth-20260724-232714-fdf299e3-a084",
+      "thresholdPassed": true,
+      "analysis": {
+        "sampleCount": 100000,
+        "revisionCount": 10,
+        "weightedAverageMs": 71.12417,
+        "runnerP95MinMs": 101.0,
+        "runnerP95MaxMs": 160.15000000000055,
+        "runnerP99MinMs": 113.0,
+        "runnerP99MaxMs": 233.0,
+        "worstRevisionRunnerP95Ms": 251.0,
+        "worstRevisionRunnerP99Ms": 266.03999999999996,
+        "maximumMs": 276.0,
+        "over100MsCount": 16020,
+        "over100MsRate": 0.1602,
+        "thresholdFailureCount": 0,
+        "warmupPasses": 10000,
+        "connectionCount": 10000,
+        "unknownPingWarningCount": 50998,
+        "revisionRollups": [
+          {
+            "revision": 1,
+            "count": 10000,
+            "averageMs": 59.6045,
+            "runnerP95MaxMs": 104.0,
+            "runnerP99MaxMs": 111.0,
+            "maximumMs": 112.0,
+            "over100MsCount": 390,
+            "over100MsRate": 0.039
+          },
+          {
+            "revision": 2,
+            "count": 10000,
+            "averageMs": 58.3535,
+            "runnerP95MaxMs": 123.04999999999995,
+            "runnerP99MaxMs": 127.0,
+            "maximumMs": 128.0,
+            "over100MsCount": 607,
+            "over100MsRate": 0.0607
+          },
+          {
+            "revision": 3,
+            "count": 10000,
+            "averageMs": 70.0479,
+            "runnerP95MaxMs": 139.0,
+            "runnerP99MaxMs": 143.0,
+            "maximumMs": 144.0,
+            "over100MsCount": 1627,
+            "over100MsRate": 0.1627
+          },
+          {
+            "revision": 4,
+            "count": 10000,
+            "averageMs": 58.7763,
+            "runnerP95MaxMs": 147.0,
+            "runnerP99MaxMs": 151.0,
+            "maximumMs": 151.0,
+            "over100MsCount": 331,
+            "over100MsRate": 0.0331
+          },
+          {
+            "revision": 5,
+            "count": 10000,
+            "averageMs": 85.5778,
+            "runnerP95MaxMs": 190.0,
+            "runnerP99MaxMs": 194.0,
+            "maximumMs": 195.0,
+            "over100MsCount": 3166,
+            "over100MsRate": 0.3166
+          },
+          {
+            "revision": 6,
+            "count": 10000,
+            "averageMs": 77.5346,
+            "runnerP95MaxMs": 230.0,
+            "runnerP99MaxMs": 236.0,
+            "maximumMs": 237.0,
+            "over100MsCount": 1925,
+            "over100MsRate": 0.1925
+          },
+          {
+            "revision": 7,
+            "count": 10000,
+            "averageMs": 57.9761,
+            "runnerP95MaxMs": 106.0,
+            "runnerP99MaxMs": 108.0,
+            "maximumMs": 108.0,
+            "over100MsCount": 249,
+            "over100MsRate": 0.0249
+          },
+          {
+            "revision": 8,
+            "count": 10000,
+            "averageMs": 94.7017,
+            "runnerP95MaxMs": 251.0,
+            "runnerP99MaxMs": 266.03999999999996,
+            "maximumMs": 276.0,
+            "over100MsCount": 3989,
+            "over100MsRate": 0.3989
+          },
+          {
+            "revision": 9,
+            "count": 10000,
+            "averageMs": 60.2581,
+            "runnerP95MaxMs": 185.0,
+            "runnerP99MaxMs": 189.0,
+            "maximumMs": 191.0,
+            "over100MsCount": 624,
+            "over100MsRate": 0.0624
+          },
+          {
+            "revision": 10,
+            "count": 10000,
+            "averageMs": 88.4112,
+            "runnerP95MaxMs": 233.04999999999995,
+            "runnerP99MaxMs": 235.0,
+            "maximumMs": 235.0,
+            "over100MsCount": 3112,
+            "over100MsRate": 0.3112
+          }
+        ]
+      },
+      "resources": {
+        "sampleCount": 168,
+        "els": {
+          "replicas": 3,
+          "aggregatePeakCpuMillicores": 306.732863,
+          "aggregatePeakCpuLimitPercent": 10.224428766666668,
+          "aggregatePeakMemoryMiB": 507.51171875,
+          "aggregatePeakMemoryLimitPercent": 33.041127522786454,
+          "busiestPodPeakCpuMillicores": 110.866806,
+          "busiestPodPeakMemoryMiB": 182.40625,
+          "maximumObservedPodCount": 3.0
+        },
+        "runners": {
+          "aggregatePeakCpuMillicores": 953.368273,
+          "aggregatePeakMemoryMiB": 14179.05078125,
+          "busiestPodPeakCpuMillicores": 57.76926,
+          "busiestPodPeakMemoryMiB": 753.16796875,
+          "maximumObservedPodCount": 20.0
+        },
+        "nodes": {
+          "featbitAggregatePeakCpuMillicores": 773.670766,
+          "featbitAggregatePeakMemoryMiB": 5766.359375,
+          "loadgenAggregatePeakCpuMillicores": 2316.421409,
+          "loadgenAggregatePeakMemoryMiB": 32128.7890625
+        }
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "label": "runner sharding at ELS 6: p20 -> p40",
+      "referenceGroup": "g1",
+      "candidateGroup": "g2",
+      "complete": true,
+      "referenceMedianMs": 296.0,
+      "candidateMedianMs": 233.0,
+      "deltaMs": -63.0,
+      "relativeChange": -0.21283783783783783,
+      "practicallyEquivalent": false,
+      "direction": "candidate-lower"
+    },
+    {
+      "label": "runner sharding at ELS 12: p20 -> p40",
+      "referenceGroup": "g3",
+      "candidateGroup": "g4",
+      "complete": true,
+      "referenceMedianMs": 283.0,
+      "candidateMedianMs": 309.0,
+      "deltaMs": 26.0,
+      "relativeChange": 0.09187279151943463,
+      "practicallyEquivalent": true,
+      "direction": "candidate-higher"
+    },
+    {
+      "label": "ELS scaling at p20: 3 -> 6",
+      "referenceGroup": "g5",
+      "candidateGroup": "g1",
+      "complete": true,
+      "referenceMedianMs": 266.03999999999996,
+      "candidateMedianMs": 296.0,
+      "deltaMs": 29.960000000000036,
+      "relativeChange": 0.11261464441437392,
+      "practicallyEquivalent": false,
+      "direction": "candidate-higher"
+    },
+    {
+      "label": "ELS scaling at p20: 6 -> 12",
+      "referenceGroup": "g1",
+      "candidateGroup": "g3",
+      "complete": true,
+      "referenceMedianMs": 296.0,
+      "candidateMedianMs": 283.0,
+      "deltaMs": -13.0,
+      "relativeChange": -0.04391891891891892,
+      "practicallyEquivalent": true,
+      "direction": "candidate-lower"
+    },
+    {
+      "label": "ELS scaling at p40: 6 -> 12",
+      "referenceGroup": "g2",
+      "candidateGroup": "g4",
+      "complete": true,
+      "referenceMedianMs": 233.0,
+      "candidateMedianMs": 309.0,
+      "deltaMs": 76.0,
+      "relativeChange": 0.3261802575107296,
+      "practicallyEquivalent": false,
+      "direction": "candidate-higher"
+    }
+  ],
+  "capacityConclusion": {
+    "complete": true,
+    "thresholdMs": 1000.0,
+    "totalConnectionsTested": 10000,
+    "smallestPassingElsReplicaCountAtP20": 3,
+    "smallestPassingElsReplicaCountValidatedAcrossBothShardings": 6,
+    "exactMaximumConnectionCapacityEstablished": false,
+    "scope": "This matrix establishes support (or failure) at exactly 10,000 concurrent WebSockets. It does not establish the maximum above 10,000."
+  }
+}

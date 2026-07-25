@@ -413,7 +413,8 @@ foreach ($sourceSuffix in @(
     "resource-monitor.log",
     "resource-monitor-error.log",
     "els-deployment.json",
-    "els-pods.json"
+    "els-pods.json",
+    "runner-placement.json"
 )) {
     $sourcePath = Join-Path $repositoryRoot "results\$RunId-$sourceSuffix"
     if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {

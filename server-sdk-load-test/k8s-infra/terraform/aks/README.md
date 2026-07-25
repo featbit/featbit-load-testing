@@ -19,6 +19,9 @@ recommends managing a newly created cluster and in-cluster resources in separate
 After this stack is ready, use this guide to deploy the temporary FeatBit profile and follow the
 parent [AKS runbook](../../README-AKS.md) to install the k6 Operator and run the test.
 
+Run relative-path commands in this document from the repository's
+`server-sdk-load-test/` directory.
+
 ## Default topology
 
 | Pool | Default | Purpose |
