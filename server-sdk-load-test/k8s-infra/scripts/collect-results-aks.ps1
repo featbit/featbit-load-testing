@@ -405,6 +405,139 @@ foreach ($job in ($jobs | Sort-Object { $_.metadata.name })) {
 }
 
 $supplementalEvidence = @()
+
+$nodeEvidencePattern = (
+    "^$([regex]::Escape($RunId))-node-.+" +
+    "(?<kind>-1s\.tsv|-metadata\.txt)$"
+)
+$nodeEvidenceNames = @(
+    $remoteNames |
+        Where-Object { $_ -match $nodeEvidencePattern } |
+        Sort-Object -Unique
+)
+if ($nodeEvidenceNames.Count -gt 0) {
+    $nodeHashArguments = @(
+        "--context", $targetContext,
+        "-n", $namespace,
+        "exec", "results-reader", "--",
+        "sha256sum"
+    ) + @($nodeEvidenceNames | ForEach-Object { "/results/$_" })
+    $nodeHashOutput = Invoke-KubectlText `
+        -Arguments $nodeHashArguments `
+        -FailureMessage "Failed to hash remote 1-second node evidence."
+    $nodeHashes = @{}
+    foreach ($hashLine in @($nodeHashOutput -split "\r?\n")) {
+        if ([string]::IsNullOrWhiteSpace($hashLine)) {
+            continue
+        }
+        if ($hashLine -notmatch "^(?<Hash>[a-fA-F0-9]{64})\s+(?<Path>.+)$") {
+            throw "Node evidence hash output contains an invalid line: '$hashLine'."
+        }
+
+        $evidenceName = [IO.Path]::GetFileName($Matches.Path.TrimStart("*"))
+        if ($nodeHashes.ContainsKey($evidenceName)) {
+            throw "Node evidence hash output contains duplicate '$evidenceName'."
+        }
+        $nodeHashes[$evidenceName] = $Matches.Hash.ToLowerInvariant()
+    }
+    if ($nodeHashes.Count -ne $nodeEvidenceNames.Count) {
+        throw (
+            "Expected $($nodeEvidenceNames.Count) node evidence hashes; " +
+            "received $($nodeHashes.Count)."
+        )
+    }
+
+    foreach ($evidenceName in $nodeEvidenceNames) {
+        $remotePath = "/results/$evidenceName"
+        $remoteHash = $nodeHashes[$evidenceName]
+        $localPath = Join-Path $archiveDirectory $evidenceName
+        $copyRequired = $true
+        if (Test-Path -LiteralPath $localPath -PathType Leaf) {
+            $existingHash = (
+                Get-FileHash -LiteralPath $localPath -Algorithm SHA256
+            ).Hash.ToLowerInvariant()
+            if ($existingHash -eq $remoteHash) {
+                $copyRequired = $false
+            }
+            else {
+                throw (
+                    "Local node evidence '$localPath' already exists with a " +
+                    "different hash."
+                )
+            }
+        }
+
+        if ($copyRequired) {
+            $temporaryPath = "$localPath.partial-$([Guid]::NewGuid().ToString('N'))"
+            try {
+                $temporaryName = Split-Path -Leaf $temporaryPath
+                $copySucceeded = $false
+                for ($attempt = 1; $attempt -le 4; $attempt++) {
+                    if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
+                        Remove-Item -LiteralPath $temporaryPath -Force
+                    }
+
+                    Push-Location $archiveDirectory
+                    try {
+                        & kubectl --request-timeout=30s `
+                            --context $targetContext `
+                            -n $namespace `
+                            cp `
+                            "results-reader:$remotePath" `
+                            ".\$temporaryName"
+                        $exitCode = $LASTEXITCODE
+                    }
+                    finally {
+                        Pop-Location
+                    }
+
+                    if ($exitCode -eq 0) {
+                        $copySucceeded = $true
+                        break
+                    }
+                    if ($attempt -lt 4) {
+                        Start-Sleep -Seconds ($attempt * 2)
+                    }
+                }
+                if (-not $copySucceeded) {
+                    throw (
+                        "Failed to copy node evidence '$evidenceName' " +
+                        "after 4 attempts."
+                    )
+                }
+
+                $copiedHash = (
+                    Get-FileHash -LiteralPath $temporaryPath -Algorithm SHA256
+                ).Hash.ToLowerInvariant()
+                if ($copiedHash -ne $remoteHash) {
+                    throw "SHA-256 mismatch after copying '$evidenceName'."
+                }
+                Move-Item `
+                    -LiteralPath $temporaryPath `
+                    -Destination $localPath
+            }
+            finally {
+                if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
+                    Remove-Item -LiteralPath $temporaryPath -Force
+                }
+            }
+        }
+
+        $supplementalEvidence += [pscustomobject]@{
+            kind = if ($evidenceName.EndsWith("-1s.tsv")) {
+                "node-1s.tsv"
+            }
+            else {
+                "node-metadata.txt"
+            }
+            name = $evidenceName
+            path = $localPath
+            length = (Get-Item -LiteralPath $localPath).Length
+            sha256 = $remoteHash
+        }
+    }
+}
+
 foreach ($sourceSuffix in @(
     "testrun.yaml",
     "metadata.json",
@@ -414,7 +547,15 @@ foreach ($sourceSuffix in @(
     "resource-monitor-error.log",
     "els-deployment.json",
     "els-pods.json",
-    "runner-placement.json"
+    "runner-placement.json",
+    "stream-timing-events.jsonl",
+    "stream-timing-pods.json",
+    "stream-timing-raw.log",
+    "sentinel-events.jsonl",
+    "sentinel-ready.jsonl",
+    "sentinel-pods.json",
+    "sentinel-targets.json",
+    "sentinel-raw.log"
 )) {
     $sourcePath = Join-Path $repositoryRoot "results\$RunId-$sourceSuffix"
     if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {

@@ -209,24 +209,51 @@ if ($summaryFiles.Count -ne [int]$collection.parallelism) {
     )
 }
 
+$firstSummary = Get-Content -Raw -LiteralPath $summaryFiles[0].Path |
+    ConvertFrom-Json
+$usesStageTimingRawMetric = (
+    $null -ne $firstSummary.metrics.PSObject.Properties[
+        "probe_updated_at_to_sdk_latency_ms"
+    ]
+)
+$latencyMetricName = if ($usesStageTimingRawMetric) {
+    "probe_updated_at_to_sdk_latency_ms"
+}
+else {
+    "probe_sync_latency_ms"
+}
+$withoutSpikesMetricName = if ($usesStageTimingRawMetric) {
+    "probe_updated_at_to_sdk_latency_without_spikes_ms"
+}
+else {
+    "probe_sync_latency_without_spikes_ms"
+}
+$spikeMetricPrefix = if ($usesStageTimingRawMetric) {
+    "probe_updated_at_to_sdk_over"
+}
+else {
+    "probe_sync_over"
+}
+
 $rows = @(
     foreach ($file in $summaryFiles) {
         $summary = Get-Content -Raw -LiteralPath $file.Path | ConvertFrom-Json
-        $full = Get-Metric -Summary $summary -Name "probe_sync_latency_ms"
+        $full = Get-Metric -Summary $summary -Name $latencyMetricName
         $withoutSpikes = Get-Metric `
             -Summary $summary `
-            -Name "probe_sync_latency_without_spikes_ms" `
+            -Name $withoutSpikesMetricName `
             -Optional
         $spikes = Get-Metric `
             -Summary $summary `
-            -Name "probe_sync_over_${SpikeCutoffMs}ms"
+            -Name "${spikeMetricPrefix}_${SpikeCutoffMs}ms"
         $revisionSpikeCounts = [ordered]@{}
         $revisionLatencyMetrics = [ordered]@{}
         $taggedLatencyMetrics = @(
             foreach ($metricProperty in $summary.metrics.PSObject.Properties) {
                 $match = [regex]::Match(
                     $metricProperty.Name,
-                    "^probe_sync_latency_ms\{revision_index:(?<index>\d+)\}$"
+                    "^$([regex]::Escape($latencyMetricName))" +
+                    "\{revision_index:(?<index>\d+)\}$"
                 )
                 if ($match.Success) {
                     [pscustomobject]@{
@@ -244,7 +271,8 @@ $rows = @(
             foreach ($metricProperty in $summary.metrics.PSObject.Properties) {
                 $match = [regex]::Match(
                     $metricProperty.Name,
-                    "^probe_sync_over_$([regex]::Escape([string]$SpikeCutoffMs))ms" +
+                    "^$([regex]::Escape($spikeMetricPrefix))_" +
+                    "$([regex]::Escape([string]$SpikeCutoffMs))ms" +
                     "\{revision_index:(?<index>\d+)\}$"
                 )
                 if ($match.Success) {
@@ -438,8 +466,14 @@ $fullLines.Add("")
 $fullLines.Add("## 统计口径")
 $fullLines.Add("")
 $fullLines.Add("- 只统计满连接预热之后 flag-01 的 $revisionCount 次正式 revision。")
-$fullLines.Add("- 完整样本不删除任何 `probe_sync_latency_ms` 数据。")
-$fullLines.Add("- 波峰在运行前固定定义为 `probe_sync_latency_ms > ${SpikeCutoffMs}ms`。")
+$fullLines.Add("- 完整样本不删除任何 ``$latencyMetricName`` 数据。")
+$fullLines.Add("- 波峰在运行前固定定义为 ``$latencyMetricName > ${SpikeCutoffMs}ms``。")
+if ($usesStageTimingRawMetric) {
+    $fullLines.Add(
+        "- 这是 `FeatureFlag.UpdatedAt → SDK` 原始时钟；canonical " +
+        "`probe_sync_latency_ms` 请查看同目录的三阶段延迟报告。"
+    )
+}
 $fullLines.Add("- 分布式 k6 无法从各 runner 摘要精确合并全局 percentile；因此平均值、样本数、min/max 和波峰占比是全局精确值，p90/p95/p99 报告为 runner 范围。")
 $fullLines.Add("")
 $fullLines.Add("## 总览")
@@ -525,7 +559,7 @@ $trimmedLines.Add("")
 $trimmedLines.Add("## 统计口径")
 $trimmedLines.Add("")
 $trimmedLines.Add("- 与完整报告来自同一次 TestRun、同一批连接和同 $revisionCount 次 flag 变更。")
-$trimmedLines.Add("- 仅删除运行前预先定义的 `probe_sync_latency_ms > ${SpikeCutoffMs}ms` 样本。")
+$trimmedLines.Add("- 仅删除运行前预先定义的 ``$latencyMetricName > ${SpikeCutoffMs}ms`` 样本。")
 $trimmedLines.Add("- 该视图用于区分常态路径与偶发尾部，不替代完整结果或 SLO 判定。")
 $trimmedLines.Add("")
 $trimmedLines.Add("## 总览")
@@ -574,6 +608,8 @@ $utf8NoBom = [Text.UTF8Encoding]::new($false)
 
 [pscustomobject]@{
     RunId = $RunId
+    MetricName = $latencyMetricName
+    RequiresStageLatencyReport = $usesStageTimingRawMetric
     FullReportPath = $fullReportPath
     WithoutSpikesReportPath = $trimmedReportPath
     FullSampleCount = $fullRollup.count

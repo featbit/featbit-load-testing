@@ -130,7 +130,9 @@ function Assert-MatrixDefinition {
     $groups = @($script:Matrix.groups)
     $executionOrder = @($script:Matrix.executionOrder)
 
-    Assert-Equal -Name "matrix group count" -Actual $groups.Count -Expected 5
+    if ($groups.Count -lt 1) {
+        throw "The matrix must contain at least one group."
+    }
     Assert-Equal `
         -Name "matrix execution count" `
         -Actual $executionOrder.Count `
@@ -235,6 +237,28 @@ function Assert-MatrixDefinition {
     )) {
         throw "Hold duration is too short to contain all configured revisions."
     }
+
+    $sentinelEnabled = $fixed.PSObject.Properties["enableElsSentinelMatrix"]
+    if ($null -ne $sentinelEnabled -and [bool]$sentinelEnabled.Value) {
+        $stageTimingEnabled = $fixed.PSObject.Properties["enableStageLatencyTiming"]
+        if ($null -eq $stageTimingEnabled -or -not [bool]$stageTimingEnabled.Value) {
+            throw "The ELS sentinel matrix requires enableStageLatencyTiming=true."
+        }
+        foreach ($propertyName in @(
+            "sentinelConnectionsPerTarget",
+            "sentinelHoldDurationSeconds"
+        )) {
+            if ($null -eq $fixed.PSObject.Properties[$propertyName]) {
+                throw "The ELS sentinel matrix is missing '$propertyName'."
+            }
+        }
+        if ([int]$fixed.sentinelConnectionsPerTarget -lt 1) {
+            throw "sentinelConnectionsPerTarget must be positive."
+        }
+        if ([int]$fixed.sentinelHoldDurationSeconds -lt 300) {
+            throw "sentinelHoldDurationSeconds must be at least 300."
+        }
+    }
 }
 
 function New-MatrixState {
@@ -273,6 +297,8 @@ function New-MatrixState {
             resourceEvidenceComplete = $false
             runnerPlacementPath = ""
             analysis = $null
+            stageLatencyAnalysis = $null
+            sentinelAnalysis = $null
             error = ""
         })
     }
@@ -1056,13 +1082,14 @@ function Invoke-FreshMatrixRun {
 
     $note = (
         "Capacity matrix {0} {1} replicate {2}: p{3} x {4}; " +
-        "10k total at 100/s; ELS {5} pods / 3 nodes; 10 revisions." -f
+        "10k total at 100/s; ELS {5} pods / {6} nodes; 10 revisions." -f
         $script:Matrix.matrixId,
         $Group.id,
         $RunState.replicate,
         $Group.parallelism,
         $Group.connectionsPerRunner,
-        $Group.elsReplicas
+        $Group.elsReplicas,
+        $script:Matrix.fixed.featbitNodeCount
     )
     $rendered = & $script:RenderScript `
         -Profile $script:Matrix.fixed.profile `
@@ -1089,40 +1116,161 @@ function Invoke-FreshMatrixRun {
         -Actual $elsEvidence.DesiredReplicas `
         -Expected $Group.elsReplicas
 
-    Write-Host (
-        "[{0}] submitting {1} ({2}, replicate {3})" -f
-        (Get-Date -Format "HH:mm:ss"),
-        $rendered.TestRunName,
-        $Group.id,
-        $RunState.replicate
+    $monitorJob = $null
+    $nodeEvidenceStarted = $false
+    $streamTimingStarted = $false
+    $sentinelStarted = $false
+    $stageTimingRequested = (
+        $null -ne $script:Matrix.fixed.PSObject.Properties[
+            "enableStageLatencyTiming"
+        ] -and
+        [bool]$script:Matrix.fixed.enableStageLatencyTiming
     )
-    $null = Invoke-KubectlText `
-        -Arguments @(
-            "--context", $script:KubeContext,
-            "apply", "-f", $rendered.ManifestPath
-        ) `
-        -FailureMessage "Failed to submit '$($rendered.TestRunName)'."
-
-    $monitorJob = Start-Job `
-        -ScriptBlock {
-            param($ScriptPath, $RunId, $Context, $Interval, $ResultsPath)
-            $ErrorActionPreference = "Stop"
-            & $ScriptPath `
-                -RunId $RunId `
-                -KubeContext $Context `
-                -SampleIntervalSeconds $Interval `
-                -TimeoutMinutes 30 `
-                -OutputDirectory $ResultsPath
-        } `
-        -ArgumentList @(
-            $script:MonitorScript,
-            $rendered.RunId,
-            $script:KubeContext,
-            [int]$script:Matrix.fixed.resourceSampleIntervalSeconds,
-            $script:ResultsDirectory
-        )
-
+    $sentinelRequested = (
+        $null -ne $script:Matrix.fixed.PSObject.Properties[
+            "enableElsSentinelMatrix"
+        ] -and
+        [bool]$script:Matrix.fixed.enableElsSentinelMatrix
+    )
     try {
+        $nodeEvidenceInterval = $script:Matrix.fixed.PSObject.Properties[
+            "nodeEvidenceSampleIntervalSeconds"
+        ]
+        if ($null -ne $nodeEvidenceInterval) {
+            Assert-Equal `
+                -Name "node evidence sample interval" `
+                -Actual ([int]$nodeEvidenceInterval.Value) `
+                -Expected 1
+            $nodeEvidenceOutput = @(
+                & $script:StartNodeEvidenceScript `
+                    -RunId $rendered.RunId `
+                    -KubeContext $script:KubeContext `
+                    -ExpectedElsPods ([int]$Group.elsReplicas) `
+                    -ExpectedFeatBitNodes (
+                        [int]$script:Matrix.fixed.featbitNodeCount
+                    ) `
+                    -ExpectedLoadgenNodes (
+                        [int]$script:Matrix.fixed.loadgenNodeCount
+                    )
+            )
+            $nodeEvidenceStarted = $true
+            $nodeEvidenceCandidates = @($nodeEvidenceOutput | Where-Object {
+                $null -ne $_ -and
+                $null -ne $_.PSObject.Properties["CollectorPods"]
+            })
+            Assert-Equal `
+                -Name "1-second collector structured result count" `
+                -Actual $nodeEvidenceCandidates.Count `
+                -Expected 1
+            $nodeEvidence = $nodeEvidenceCandidates[0]
+            Assert-Equal `
+                -Name "ready 1-second collectors" `
+                -Actual ([int]$nodeEvidence.CollectorPods) `
+                -Expected (
+                    [int]$script:Matrix.fixed.featbitNodeCount +
+                    [int]$script:Matrix.fixed.loadgenNodeCount
+                )
+        }
+
+        if ($stageTimingRequested) {
+            $streamTimingOutput = @(
+                & $script:StartStreamTimingScript `
+                    -RunId $rendered.RunId `
+                    -KubeContext $script:KubeContext `
+                    -ExpectedLoadgenNodes (
+                        [int]$script:Matrix.fixed.loadgenNodeCount
+                    )
+            )
+            $streamTimingStarted = $true
+            $streamTimingCandidates = @($streamTimingOutput | Where-Object {
+                $null -ne $_ -and
+                $null -ne $_.PSObject.Properties["ObserverPods"]
+            })
+            Assert-Equal `
+                -Name "stream timing structured result count" `
+                -Actual $streamTimingCandidates.Count `
+                -Expected 1
+            Assert-Equal `
+                -Name "ready stream timing observers" `
+                -Actual ([int]$streamTimingCandidates[0].ObserverPods) `
+                -Expected ([int]$script:Matrix.fixed.loadgenNodeCount)
+        }
+
+        if ($sentinelRequested) {
+            $sentinelOutput = @(
+                & $script:StartSentinelScript `
+                    -RunId $rendered.RunId `
+                    -KubeContext $script:KubeContext `
+                    -RunnerImage $script:Matrix.fixed.runnerImage `
+                    -ExpectedLoadgenNodes (
+                        [int]$script:Matrix.fixed.loadgenNodeCount
+                    ) `
+                    -ExpectedElsPods ([int]$Group.elsReplicas) `
+                    -ConnectionsPerTarget (
+                        [int]$script:Matrix.fixed.sentinelConnectionsPerTarget
+                    ) `
+                    -HoldDurationSeconds (
+                        [int]$script:Matrix.fixed.sentinelHoldDurationSeconds
+                    )
+            )
+            $sentinelStarted = $true
+            $sentinelCandidates = @($sentinelOutput | Where-Object {
+                $null -ne $_ -and
+                $null -ne $_.PSObject.Properties["SentinelPods"]
+            })
+            Assert-Equal `
+                -Name "ELS sentinel structured result count" `
+                -Actual $sentinelCandidates.Count `
+                -Expected 1
+            Assert-Equal `
+                -Name "ready ELS sentinel Pods" `
+                -Actual ([int]$sentinelCandidates[0].SentinelPods) `
+                -Expected ([int]$script:Matrix.fixed.loadgenNodeCount)
+            Assert-Equal `
+                -Name "ELS sentinel diagnostic connections" `
+                -Actual (
+                    [int]$sentinelCandidates[0].TotalDiagnosticConnections
+                ) `
+                -Expected (
+                    [int]$script:Matrix.fixed.loadgenNodeCount *
+                    [int]$Group.elsReplicas *
+                    [int]$script:Matrix.fixed.sentinelConnectionsPerTarget
+                )
+        }
+
+        Write-Host (
+            "[{0}] submitting {1} ({2}, replicate {3})" -f
+            (Get-Date -Format "HH:mm:ss"),
+            $rendered.TestRunName,
+            $Group.id,
+            $RunState.replicate
+        )
+        $null = Invoke-KubectlText `
+            -Arguments @(
+                "--context", $script:KubeContext,
+                "apply", "-f", $rendered.ManifestPath
+            ) `
+            -FailureMessage "Failed to submit '$($rendered.TestRunName)'."
+
+        $monitorJob = Start-Job `
+            -ScriptBlock {
+                param($ScriptPath, $RunId, $Context, $Interval, $ResultsPath)
+                $ErrorActionPreference = "Stop"
+                & $ScriptPath `
+                    -RunId $RunId `
+                    -KubeContext $Context `
+                    -SampleIntervalSeconds $Interval `
+                    -TimeoutMinutes 30 `
+                    -OutputDirectory $ResultsPath
+            } `
+            -ArgumentList @(
+                $script:MonitorScript,
+                $rendered.RunId,
+                $script:KubeContext,
+                [int]$script:Matrix.fixed.resourceSampleIntervalSeconds,
+                $script:ResultsDirectory
+            )
+
         $placementPath = Wait-RunnerPlacement `
             -RunId $rendered.RunId `
             -TestRunName $rendered.TestRunName `
@@ -1152,6 +1300,41 @@ function Invoke-FreshMatrixRun {
         if ($null -ne $monitorJob) {
             Remove-Job -Job $monitorJob -Force -ErrorAction SilentlyContinue
         }
+        $sentinelStopError = $null
+        if ($sentinelStarted) {
+            try {
+                $null = & $script:StopSentinelScript `
+                    -RunId $rendered.RunId `
+                    -KubeContext $script:KubeContext `
+                    -OutputDirectory $script:ResultsDirectory
+            }
+            catch {
+                $sentinelStopError = $_
+            }
+        }
+        $streamTimingStopError = $null
+        if ($streamTimingStarted) {
+            try {
+                $null = & $script:StopStreamTimingScript `
+                    -RunId $rendered.RunId `
+                    -KubeContext $script:KubeContext `
+                    -OutputDirectory $script:ResultsDirectory
+            }
+            catch {
+                $streamTimingStopError = $_
+            }
+        }
+        if ($nodeEvidenceStarted) {
+            $null = & $script:StopNodeEvidenceScript `
+                -RunId $rendered.RunId `
+                -KubeContext $script:KubeContext
+        }
+        if ($null -ne $streamTimingStopError) {
+            throw $streamTimingStopError
+        }
+        if ($null -ne $sentinelStopError) {
+            throw $sentinelStopError
+        }
     }
 
     $collectionOutput = @(
@@ -1178,6 +1361,23 @@ function Invoke-FreshMatrixRun {
     $analysis = Assert-ArchiveForGroup `
         -RunId $rendered.RunId `
         -Group $Group
+    $stageLatencyAnalysis = $null
+    if ($stageTimingRequested) {
+        $stageLatencyAnalysis = & $script:AnalyzeStageScript `
+            -RunId $rendered.RunId `
+            -ResultsDirectory $script:ResultsDirectory
+        $RunState.stageLatencyAnalysis = $stageLatencyAnalysis
+    }
+    $sentinelAnalysis = $null
+    if ($sentinelRequested) {
+        $sentinelAnalysis = & $script:AnalyzeSentinelScript `
+            -RunId $rendered.RunId `
+            -ResultsDirectory $script:ResultsDirectory
+        if (-not [bool]$sentinelAnalysis.validation.complete) {
+            throw "Sentinel matrix evidence is incomplete for '$($rendered.RunId)'."
+        }
+        $RunState.sentinelAnalysis = $sentinelAnalysis
+    }
     $RunState.analysis = $analysis
     $RunState.archiveDirectory = $collection.ArchiveDirectory
     $RunState.runnerPlacementPath = Join-Path `
@@ -1229,6 +1429,30 @@ $script:KubeContext = [string]$script:Matrix.fixed.kubernetesContext
 $script:RenderScript = Join-Path $PSScriptRoot "render-aks-testrun.ps1"
 $script:MonitorScript = Join-Path $PSScriptRoot "monitor-aks-testrun.ps1"
 $script:CaptureElsScript = Join-Path $PSScriptRoot "capture-aks-els-evidence.ps1"
+$script:StartNodeEvidenceScript = Join-Path `
+    $PSScriptRoot `
+    "start-aks-1s-evidence.ps1"
+$script:StopNodeEvidenceScript = Join-Path `
+    $PSScriptRoot `
+    "stop-aks-1s-evidence.ps1"
+$script:StartStreamTimingScript = Join-Path `
+    $PSScriptRoot `
+    "start-aks-streaming-timing.ps1"
+$script:StopStreamTimingScript = Join-Path `
+    $PSScriptRoot `
+    "stop-aks-streaming-timing.ps1"
+$script:StartSentinelScript = Join-Path `
+    $PSScriptRoot `
+    "start-aks-els-sentinels.ps1"
+$script:StopSentinelScript = Join-Path `
+    $PSScriptRoot `
+    "stop-aks-els-sentinels.ps1"
+$script:AnalyzeStageScript = Join-Path `
+    $PSScriptRoot `
+    "analyze-aks-stage-latency.ps1"
+$script:AnalyzeSentinelScript = Join-Path `
+    $PSScriptRoot `
+    "analyze-aks-sentinel-matrix.ps1"
 $script:CollectScript = Join-Path $PSScriptRoot "collect-results-aks.ps1"
 $script:AnalyzeScript = Join-Path $PSScriptRoot "analyze-aks-latency.ps1"
 
@@ -1288,6 +1512,12 @@ if ($RetryFailed) {
             $failedRun.resourceEvidenceComplete = $false
             $failedRun.runnerPlacementPath = ""
             $failedRun.analysis = $null
+            if ($null -ne $failedRun.PSObject.Properties["stageLatencyAnalysis"]) {
+                $failedRun.stageLatencyAnalysis = $null
+            }
+            if ($null -ne $failedRun.PSObject.Properties["sentinelAnalysis"]) {
+                $failedRun.sentinelAnalysis = $null
+            }
             $failedRun.error = ""
         }
     }
@@ -1314,6 +1544,28 @@ Assert-Equal `
     -Name "ready FeatBit node count" `
     -Actual $featbitNodes.Count `
     -Expected $script:Matrix.fixed.featbitNodeCount
+$expectedLoadgenVmSize = $script:Matrix.fixed.PSObject.Properties[
+    "loadgenNodeVmSize"
+]
+if ($null -ne $expectedLoadgenVmSize) {
+    foreach ($node in $loadgenNodes) {
+        Assert-Equal `
+            -Name "loadgen node '$($node.metadata.name)' VM size" `
+            -Actual $node.metadata.labels."node.kubernetes.io/instance-type" `
+            -Expected $expectedLoadgenVmSize.Value
+    }
+}
+$expectedFeatbitVmSize = $script:Matrix.fixed.PSObject.Properties[
+    "featbitNodeVmSize"
+]
+if ($null -ne $expectedFeatbitVmSize) {
+    foreach ($node in $featbitNodes) {
+        Assert-Equal `
+            -Name "FeatBit node '$($node.metadata.name)' VM size" `
+            -Actual $node.metadata.labels."node.kubernetes.io/instance-type" `
+            -Expected $expectedFeatbitVmSize.Value
+    }
+}
 
 $hpa = Invoke-KubectlJson `
     -Arguments @(

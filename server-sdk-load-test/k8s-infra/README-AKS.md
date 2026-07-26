@@ -35,11 +35,11 @@ Azure 中运行，并通过资源隔离和监控判断传播延迟来自负载�
 
 AKS growth 使用独立、分布式的负载生成器，并固定 FeatBit 副本数和资源边界：
 
-- growth 是 10,000 条连接、`parallelism >= 5`；尾延迟对照固定使用 p40、
-  每 runner 250 条、每个 loadgen node 4 Pods；
+- 当前配额安全的 growth 对照是 10,000 条连接、p20、每 runner 500 条、
+  每个 loadgen node 2 Pods；
 - growth-plus 是 20,000 条连接、`parallelism >= 10`；推荐 p10 时每 runner 2,000 条；
 - 两者均预置 20 个 flags，只测 flag-01；flag-02 用于满连接后不计分预热；
-- ELS 固定为 6 个副本，每个 `500m CPU / 256Mi` request、
+- ELS 固定为 6 个副本，每个 `250m CPU / 256Mi` request、
   `1 CPU / 512Mi` limit，HPA 关闭；
 - runner 分别独占带 taint 的 loadgen 节点，不设置 CPU limit；
 - FeatBit 和 runner 不共享节点；测量期间关闭自动扩缩容并停止部署；
@@ -52,6 +52,32 @@ AKS growth 使用独立、分布式的负载生成器，并固定 FeatBit 副本
 `Standard_D4ds_v5` 与每 runner `6Gi` request、`10Gi` limit；D2 节点加上 DaemonSet/OS
 工作集后余量过小，不在同一轮容量拐点实验中同时更换 generator 规格。专用节点不设置
 CPU limit，避免 CFS throttling 人为抬高 `probe_sync_latency_ms`。
+
+### 当前 54-vCPU 配额安全拓扑
+
+当前 `terraform.tfvars.example` 把 D4 算力优先留给 loadgen，同时让 6 个 ELS
+严格一节点一 Pod：
+
+| 节点池 | SKU × 数量 | 工作负载 |
+| --- | --- | --- |
+| `system` | `Standard_D2ds_v5 × 1` | AKS 系统组件 |
+| `featbit` | `Standard_D2ds_v5 × 6` | 6 个 ELS 严格一节点一 Pod；UI/API/PG/Redis 同池 |
+| `loadgen` | `Standard_D4ds_v5 × 10` | 20 × 500 connections，每节点 2 runners |
+
+固定负载仍为 10,000 WebSocket、100/s、20 个预置 flags、只测 flag-01、flag-02
+满连接后预热、10 次正式 revision、三次重复。除了 5 秒 Kubernetes 资源采样，还按
+实测 p50 `1.01s` / p95 `1.06s` 采集 host CPU/pressure、run queue、softirq、
+丢包/重传与 ELS cgroup throttling。
+
+三次复核全部通过：保守 p99 为 `299.01 / 283.01 / 252.00ms`，三轮中位数
+`283.01ms`；loadgen CPU-pressure p99 为 `10.57%–11.76%`。相较之前
+10 × D2 loadgen 的诊断拓扑，p99 中位数下降 `40.92%`，说明上一轮受到
+generator 调度压力污染。完整正常/去波峰结果和 1 秒资源证据见
+[54-vCPU 复核报告](../docs/reports/aks-10k-d4-loadgen-d2-featbit-1s.md)。
+
+旧的 46-vCPU D2-loadgen 配置和
+[诊断报告](../docs/reports/aks-10k-d2-node-isolation-1s.md)仍保留，只用于复现
+观测端瓶颈，不能与当前 campaign 混合续跑。
 
 ## 支持边界
 
@@ -89,7 +115,7 @@ flowchart LR
         end
         subgraph Loadgen[loadgen 节点池]
             K6O[k6 Operator]
-            Runner[k6 runner x40<br/>每 loadgen node x4]
+            Runner[k6 runner x20<br/>每 loadgen node x2]
             Results[results-reader]
         end
         Files[(Azure Files RWX PVC)]
@@ -99,8 +125,8 @@ flowchart LR
     Runner -->|REST flag revisions| API
     Runner --> Files
     Results --> Files
-    API --> PG[(外部 PostgreSQL)]
-    API --> Redis[(外部 Redis)]
+    API --> PG[(内置 PostgreSQL)]
+    API --> Redis[(内置 Redis)]
     ELS --> Redis
     AKS --> Monitor[Azure Monitor / Managed Prometheus]
 ```
@@ -112,14 +138,15 @@ Internal Load Balancer、私网对等和私有 DNS 暴露给 loadgen，不能继
 
 ## 起始资源模型
 
-下面是 growth 首次迁移的起点，不是最终容量承诺。VM SKU 是否可用、可用区支持情况和订阅
-quota 必须在目标 region 中先确认。
+下面是已发布五组矩阵使用的历史 D4 起点，不是当前
+`terraform.tfvars.example` 的 54-vCPU 拓扑，也不是最终容量承诺。VM SKU
+是否可用、可用区支持情况和订阅 quota 必须在目标 region 中先确认。
 
 | 节点池 | 示例 | 数量 | 用途 |
 | --- | --- | ---: | --- |
 | `system` | `Standard_D2ds_v5` | 1 | 临时集群的 CoreDNS、CSI 等系统组件 |
 | `featbit` | `Standard_D4ds_v5` | 3 | UI、API、6 个 ELS 及临时 PG/Redis；与 runner 隔离 |
-| `loadgen` | `Standard_D4ds_v5` | 10 | 当前 growth 尾延迟对照固定 10 节点、每节点 4 runners |
+| `loadgen` | `Standard_D4ds_v5` | 10 | 历史五组矩阵每节点 2 或 4 runners |
 
 首次 AKS 对照跑使用以下工作负载配置：
 
@@ -150,8 +177,10 @@ USD；月价按 730 小时计算。实际账单受协议折扣、税费和 regio
 | `Standard_D8ds_v5` | $0.620 | $452.60 | $0.564 | $411.72 |
 | `Standard_D16ds_v5` | $1.240 | $905.20 | $1.128 | $823.44 |
 
-当前 growth 拓扑（1 个 D2 + 9 个 D4）的 VM 合计约为 East Asia `$2.945/小时`；
-growth-plus 将 loadgen 扩至 10 后（1 个 D2 + 13 个 D4）约 `$4.185/小时`。这不包含磁盘、
+历史 growth 拓扑（1 个 D2 + 9 个 D4）的 VM 合计约为 East Asia `$2.945/小时`；
+历史 growth-plus 将 loadgen 扩至 10 后（1 个 D2 + 13 个 D4）约 `$4.185/小时`。
+当前 54-vCPU 拓扑（7 个 D2 + 10 个 D4）约 `$4.185/小时`；旧的
+D2-loadgen 诊断拓扑（11 个 D2 + 6 个 D4）约 `$3.565/小时`。这不包含磁盘、
 Load Balancer/Public IP、ACR、Azure Files、监控、数据库、Redis、流量和 AKS Standard tier。
 Terraform 默认使用 AKS Free tier 和 ACR Basic。可随时运行
 [`get-vm-prices.ps1`](terraform/aks/get-vm-prices.ps1) 获取最新价格。
@@ -167,7 +196,9 @@ Terraform 默认使用 AKS Free tier 和 ACR Basic。可随时运行
    `separate: true`，多 Pod/节点时使用 `separate: false` 加 topology spread。loadgen
    节点数至少为 `ceil(parallelism / runnersPerNode)`。
 5. 测量期间固定节点数、Pod 副本数和 HPA 状态，不执行升级、部署或节点维护。
-6. 所有节点与外部依赖保持时钟同步。该测试用 flag payload 的 `updatedAt` 计算传播延迟。
+6. 所有节点与外部依赖保持时钟同步。flag payload 的 `updatedAt` 只用于
+   `probe_updated_at_to_sdk_latency_ms` 原始诊断；canonical
+   `probe_sync_latency_ms` 必须使用三阶段 observer 把 Redis 发布作为起点。
 7. 记录 AKS 版本、节点 SKU/数量、Helm chart 版本、镜像 digest 和所有资源配额。
 8. 让测试自然结束并收集报告；强制终止可能跳过 `teardown()` 的 baseline 恢复。
 
@@ -661,16 +692,16 @@ $rendered = .\k8s-infra\scripts\render-aks-testrun.ps1 `
   -Profile growth `
   -KubeContext $aksContext `
   -RunnerImage $runnerImage `
-  -Parallelism 40 `
-  -RunnersPerNode 4 `
-  -RunnerCpuRequest 250m `
-  -RunnerMemoryRequest 768Mi `
-  -RunnerMemoryLimit 1536Mi `
-  -Note "10k p40 tail-latency comparison"
+  -Parallelism 20 `
+  -RunnersPerNode 2 `
+  -RunnerCpuRequest 500m `
+  -RunnerMemoryRequest 1Gi `
+  -RunnerMemoryLimit 3Gi `
+  -Note "10k p20 quota-safe D4-loadgen comparison"
 ```
 
 渲染器会要求 10 个带 `workload=loadgen` 的节点，并通过 topology spread 严格形成每节点
-4 Pods。
+2 Pods。
 
 渲染后的关键配置为：
 
@@ -764,8 +795,9 @@ kubectl --context $aksContext explain testrun.spec.runner.resources
 - `parallelism` 和 `separate` 与本轮 `Parallelism / RunnersPerNode` 一致；
 - runner、starter 和 initializer 都要求 `workload: loadgen`；
 - runner 的 API/streaming URL 都是 `.svc.cluster.local`；
-- runner resources 与 metadata 中的渲染参数一致；当前 growth p40 固定为每 Pod
-  `250m CPU / 768Mi` request、`1536Mi` memory limit 且无 CPU limit；
+- runner resources 与 metadata 中的渲染参数一致；当前 54-vCPU p20 固定为每 Pod
+  `500m CPU / 1Gi` request、`3Gi` memory limit 且无 CPU limit；历史五组矩阵的
+  p40 使用 `250m CPU / 768Mi` request、`1536Mi` memory limit；
 - baseline 与 baseline-plus 都在 environment 中保留 10 个 probe flags：
   `loadtest-sync-probe-01` 是唯一计分 flag；`loadtest-sync-probe-02` 在所有连接建立并完成
   stabilization 后执行一次不计分的 `baseline -> rev-001 -> baseline` 广播预热，随后才变更
@@ -839,7 +871,7 @@ kubectl --context $aksContext get events -A `
 
 Gate 必须全部满足：
 
-- ELS 为 `6/6` Ready，三个 featbit nodes 各有两个 ELS Pod，EndpointSlice 有六个 Ready endpoint；
+- ELS 为 `6/6` Ready，六个 featbit nodes 各有一个 ELS Pod，EndpointSlice 有六个 Ready endpoint；
 - loadgen 节点可分配资源大于 runner request，且没有其他业务 Pod；
 - target 与 loadgen Pod 没有落到同一节点池；
 - HPA/cluster autoscaler 的测量期策略已冻结；
@@ -993,12 +1025,212 @@ baseline、baseline-plus、growth 和 growth-plus 还必须确认：
 - 每个 runner 的 `post_ramp_warmup_coverage == 100%`，证明它负责的每条连接都收到 flag-02
   的预热 revision 和恢复 baseline 两次 patch；
 - 正式样本只来自 `PROBE_FLAG_KEYS=loadtest-sync-probe-01`；
-- `probe_sync_over_60ms`、`probe_sync_over_80ms`、`probe_sync_over_100ms` 的 `value`
-  分别是正式样本超过对应延迟的精确比例，而不是从 p95/p99 估算的区间；
+- 历史镜像中的 `probe_sync_over_*` 与新镜像中的
+  `probe_updated_at_to_sdk_over_*` 都是 `updatedAt → SDK` 原始边界的精确比例；
+  canonical `probe_sync_latency_ms` 及其阶段拆分由三阶段报告生成；
 - `post_ramp_warmup_latency_ms` 只描述被排除的预热广播，不能混入正式
   `probe_sync_latency_ms`。
 
-### 11.1 固定 10k 的 p99 容量矩阵
+### 11.1 三阶段延迟验证
+
+旧 runner 摘要只包含 `FeatureFlag.UpdatedAt → SDK`，没有记录 Redis
+publication 边界，因此不能从历史归档精确反算以下三项：
+
+| 指标 | 起点 → 终点 |
+| --- | --- |
+| `end_to_end_latency_ms` | controller 发起 PUT → SDK 应用 revision |
+| `control_plane_write_latency_ms` | PUT 发起 → 最早 observer 看到 Redis 发布 |
+| `probe_sync_latency_ms` | 最早 observer 看到 Redis 发布 → SDK 应用 revision |
+
+最终约定为
+`probe_sync_latency_ms = streaming_delivery_latency_ms`，并满足
+`end_to_end_latency_ms = control_plane_write_latency_ms +
+probe_sync_latency_ms`。`FeatureFlag.UpdatedAt → SDK` 仍保留为
+`probe_updated_at_to_sdk_latency_ms`，不能再称为 canonical streaming
+delivery。
+
+三阶段测试会在每个 loadgen node 上临时运行一个只读 Redis `SUBSCRIBE`
+observer。它不修改 FeatBit 源码、Redis 数据或 PostgreSQL 数据；执行器收集完日志后
+删除 observer，但保留 AKS、FeatBit、PVC 和 TestRun。先使用独立 state 做只读预检：
+与其他容量矩阵相同，正式运行会在提交 TestRun 前执行一次受控 ELS 冷重启以固定
+placement，期间公网 streaming 会短暂不可用。
+
+```powershell
+$matrix = ".\k8s-infra\matrices\aks-stage-latency-validation.json"
+$state = ".\results\aks-stage-latency-validation-$(
+  Get-Date -Format 'yyyyMMdd-HHmmss'
+)-state.json"
+
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 `
+  -MatrixPath $matrix `
+  -StatePath $state `
+  -ValidateOnly
+```
+
+预检通过后先跑一轮验证，不复用历史归档：
+
+```powershell
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 `
+  -MatrixPath $matrix `
+  -StatePath $state `
+  -MaxFreshRuns 1
+```
+
+从 state 读取 run ID 并生成 JSON、Markdown 和可发布 HTML：
+
+```powershell
+$matrixState = Get-Content -Raw $state | ConvertFrom-Json
+$runId = @($matrixState.runs |
+  Where-Object status -eq "completed")[-1].runId
+
+.\k8s-infra\scripts\analyze-aks-stage-latency.ps1 `
+  -RunId $runId
+
+Invoke-Item ".\results\$runId\$runId-stage-latency.html"
+```
+
+正式接受结果前必须确认：
+
+- 20 个 runner 全部通过，正式样本为 100,000；
+- 10 次 controller start/end 一一匹配且没有 error；
+- 10 个 observer 覆盖全部 loadgen nodes，每次正式 revision 恰好匹配 10 个事件；
+- `collection.json` 和资源证据完整；
+- observer 到达跨度与负值最小值被报告，不因不符合预期而裁剪。
+
+旁路 subscriber 收到消息晚于 Redis 服务端真正执行 `PUBLISH`，所以该方法可能轻微
+低估 streaming delivery。若出现低个位毫秒负值，应将其解释为跨节点时钟、毫秒取整和
+observer 边界误差，不能当成物理负延迟。当前初步验证报告见
+[AKS 10k 三阶段报告](../docs/reports/aks-10k-stage-latency-validation.md)。
+
+### 11.2 ELS × loadgen sentinel 判别实验
+
+三阶段验证已经排除稳定的 control-plane、ELS CPU/memory saturation 和正式
+revision 窗口内的丢包/重传，但普通 Service-routed runner 不能说明每条长连接落在哪个
+ELS Pod。要区分 ELS fan-out 和 loadgen/k6 接收调度，使用
+[`aks-els-loadgen-sentinel.json`](matrices/aks-els-loadgen-sentinel.json)。
+
+这个实验不修改任何 FeatBit 源码。主负载继续使用 10,000 条 Service-routed
+WebSocket、20 × 500 runners；诊断 DaemonSet 在 10 个 loadgen nodes 上各自向 6 个
+ELS Pod IP 建立 3 条直连：
+
+| 观测维度 | 数量 |
+| --- | ---: |
+| 主负载 | 10,000 |
+| loadgen rows | 10 |
+| ELS columns | 6 |
+| 每个 row × column cell | 3 |
+| 额外诊断连接 | 180 |
+| 重复次数 | 3 |
+
+额外的 180 条连接必须与主负载分开报告，不能把总数写成 10,000。它们只占主负载的
+1.8%，但会在同一轮资源证据中出现，因此与没有 sentinel 的历史资源峰值不完全等价。
+
+预注册规则按每个 cell 的 3 条连接中位数判断：
+
+- cell median `>100ms` 为 spike；
+- 同一 loadgen row 至少 4/6 columns spike，标记为 `loadgen-row`；
+- 同一 ELS column 至少 7/10 rows spike，标记为 `els-column`；
+- 同一 revision 至少 30/60 cells spike，标记为 `global`；
+- 主 runner p99 `>100ms` 而 direct sentinels 稳定，标记为
+  `main-runners-only`；
+- 其他少量 cell 为 `isolated-cells`，不能归因到整个 node 或 Pod。
+
+预注册分类始终使用“所有 loadgen observers 中最早的 Redis observation”作为统一
+起点。分析器还会输出同节点 observer → sentinel 的 sensitivity view，用于去除每个
+receiver 的跨节点时钟/observer offset。这个二级视图必须与预注册结果并列展示，不能
+在看到结果后用它替换主口径；只有在二级视图中仍成立的 row 才能排除该 offset 解释。
+
+先使用独立 state 做只读预检。正式执行仍会在每轮开始前冷重启 ELS，公网 streaming
+会短暂不可用：
+
+```powershell
+$matrix = ".\k8s-infra\matrices\aks-els-loadgen-sentinel.json"
+$state = ".\results\aks-els-loadgen-sentinel-$(
+  Get-Date -Format 'yyyyMMdd-HHmmss'
+)-state.json"
+
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 `
+  -MatrixPath $matrix `
+  -StatePath $state `
+  -ValidateOnly
+```
+
+预检通过后先只跑一次，检查完整性和分类报告：
+
+```powershell
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 `
+  -MatrixPath $matrix `
+  -StatePath $state `
+  -MaxFreshRuns 1
+
+$matrixState = Get-Content -Raw $state | ConvertFrom-Json
+$runId = @($matrixState.runs |
+  Where-Object status -eq "completed")[-1].runId
+
+Invoke-Item ".\results\$runId\$runId-sentinel-analysis.md"
+Invoke-Item ".\results\$runId\$runId-stage-latency.html"
+```
+
+执行器会自动完成以下动作：
+
+1. 冷重启并验证 6 个 ELS 一节点一 Pod；
+2. 启动 10 个 Redis timing observers 和 10 个 sentinel Pods；
+3. 确认全部 180 条 direct sentinel 连接完成 initial sync；
+4. 提交 20-runner TestRun，并采集 1 秒 host/cgroup evidence；
+5. 在删除临时 sentinel/observer DaemonSet 前保存日志；
+6. 生成 `stage-latency` 与 `sentinel-analysis` JSON/Markdown；
+7. 保留 AKS、FeatBit、PVC、数据库和 TestRun。
+
+首轮必须满足 180/180 ready、1,800/1,800 正式 sentinel events、
+100,000/100,000 主负载正式样本及完整 1 秒证据。否则保留现场，不能继续剩余两轮。
+首轮有效后执行：
+
+```powershell
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 `
+  -MatrixPath $matrix `
+  -StatePath $state `
+  -Resume
+```
+
+三轮分类必须同时报告，不能只选择最符合假设的一轮。`els-column` 说明同一 ELS Pod
+从多个接收节点都晚；`loadgen-row` 说明同一接收节点对多个 ELS 都晚；
+`main-runners-only` 则把调查范围缩到高连接数 runner、Service-selected connection
+cohort 或主 k6 接收路径。
+
+三轮完成后，为每轮生成约 1 秒证据，再生成统一报告：
+
+```powershell
+$matrixState = Get-Content -Raw $state | ConvertFrom-Json
+$completedRuns = @($matrixState.runs |
+  Where-Object status -eq "completed" |
+  Sort-Object sequence)
+
+if ($completedRuns.Count -ne 3) {
+    throw "Expected 3 completed sentinel runs; found $($completedRuns.Count)."
+}
+
+foreach ($run in $completedRuns) {
+    .\k8s-infra\scripts\analyze-aks-1s-evidence.ps1 `
+      -RunId $run.runId
+}
+
+node .\k8s-infra\scripts\summarize-aks-sentinel-experiment.mjs `
+  --state $state `
+  --output-prefix .\docs\reports\aks-10k-els-loadgen-sentinel
+```
+
+统一报告的资源表只属于本次 sentinel 实验：额外 180 条诊断连接及 10 个 sentinel
+Pods 已计入同轮资源窗口，不能把这张表移到其他实验下，也不能与无 sentinel 的历史
+资源表混用。
+
+已完成的三轮参考结果见
+[sentinel 判别报告](../docs/reports/aks-10k-els-loadgen-sentinel.md)和
+[machine-readable JSON](../docs/reports/aks-10k-els-loadgen-sentinel.json)。
+该参考实验按预注册口径触发 3 次 `loadgen-row`，其中 1 次在同节点 observer
+敏感性分析后仍成立；两种口径均为 0 次 `els-column`、0 次 `global`。它只用于说明
+判别方法；新的环境仍必须重新执行，不能直接复用这些延迟数值。
+
+### 11.3 固定 10k 的 p99 容量矩阵
 
 当目标是区分 runner 分片与 ELS 副本数，而不是继续手工试配置时，使用
 [`aks-p99-capacity.json`](matrices/aks-p99-capacity.json) 和可恢复执行器。矩阵固定
@@ -1013,8 +1245,10 @@ baseline、baseline-plus、growth 和 growth-plus 还必须确认：
 | g4 | `40 × 250` | 10 nodes × 4 runners | 12 pods / 3 nodes |
 | g5 | `20 × 500` | 10 nodes × 2 runners | 3 pods / 3 nodes |
 
-主指标预先固定为“每轮 10 个 revisions 中，最差的 per-runner
-`probe_sync_latency_ms p99`”。每个 revision 的每个 runner 都必须 `<1000ms`。
+这个历史矩阵的主指标预先固定为“每轮 10 个 revisions 中，最差的 per-runner
+`probe_sync_latency_ms p99`”。这些已发布归档使用旧的
+`FeatureFlag.UpdatedAt → SDK` 语义；新 runner 镜像将同一原始边界命名为
+`probe_updated_at_to_sdk_latency_ms`。每个 revision 的每个 runner 都必须 `<1000ms`。
 三次重复只报告中位数和范围，不作统计显著性声明。两组只有同时满足相对变化 `<10%`
 和绝对变化 `<50ms` 才判定为“实际差异不大”。
 
@@ -1065,6 +1299,75 @@ Pod 和日志；确认该轮无效后才使用 `-Resume -RetryFailed` 创建新�
 **恰好 10,000** 条并行 WebSocket 下通过或失败；即使 p99 很低，也不能外推为
 10,000 以上的精确容量上限。
 
+### 11.4 复现 54-vCPU 配额安全复核
+
+当前 `terraform/aks/terraform.tfvars.example` 固定为 6 × D2 FeatBit nodes、
+10 × D4 loadgen nodes，加上 1 × D2 system 共 54 vCPU。先完成 Terraform、Helm
+与本节 Gate，确认 6 个 ELS 严格一节点一 Pod，再执行：
+
+```powershell
+$matrix = ".\k8s-infra\matrices\aks-10k-d4-loadgen-d2-featbit-1s.json"
+
+# Read-only topology, flag, image and evidence preflight.
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 `
+  -MatrixPath $matrix `
+  -ValidateOnly
+
+# Three fresh repetitions. The executor retains TestRuns and all evidence.
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 `
+  -MatrixPath $matrix
+```
+
+执行器在每轮同时启动 16 个节点的 host/cgroup collector。每轮完成后必须存在
+16 份 `*-1s.tsv` 和 16 份 metadata，且实际采样间隔应接近 p50 `1.01s` /
+p95 `1.06s`。如果 collector 缺失或 ELS host cgroup 无法映射，该轮资源归因无效。
+
+完成后生成每轮正常/去波峰报告、1 秒节点证据及三轮汇总：
+
+```powershell
+$state = Get-Content -Raw `
+  .\results\aks-10k-d4-loadgen-d2-featbit-1s-state.json |
+  ConvertFrom-Json
+
+foreach ($run in $state.runs) {
+  .\k8s-infra\scripts\analyze-aks-latency.ps1 `
+    -RunId $run.runId
+
+  .\k8s-infra\scripts\analyze-aks-1s-evidence.ps1 `
+    -RunId $run.runId
+}
+
+.\k8s-infra\scripts\summarize-aks-quota-safe-d4-loadgen.ps1
+```
+
+最终报告写到
+`docs/reports/aks-10k-d4-loadgen-d2-featbit-1s.md` 和同名 JSON。`>100ms`
+过滤视图只用于诊断；当删除比例不再是少数时，不得称为「去除偶发波峰后的真实性能」。
+本流程不会删除 AKS、PVC、数据库或已完成 TestRun。
+
+### 11.5 复现旧的 D2-loadgen 诊断
+
+旧 campaign 使用 6 × D4 FeatBit nodes 和 10 × D2 loadgen nodes，共 46 vCPU。
+它证明 D2 generator pressure 会污染延迟，不是推荐容量基线。若必须复现，不能使用
+当前 Terraform 默认值；应单独审核节点池变更，并使用：
+
+```powershell
+$matrix = ".\k8s-infra\matrices\aks-10k-d2-els-node-isolation-1s.json"
+
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 `
+  -MatrixPath $matrix `
+  -ValidateOnly
+
+.\k8s-infra\scripts\run-aks-capacity-matrix.ps1 `
+  -MatrixPath $matrix
+
+.\k8s-infra\scripts\summarize-aks-d2-node-isolation.ps1
+```
+
+该流程的 state、matrix ID 和
+[`aks-10k-d2-node-isolation-1s` 报告](../docs/reports/aks-10k-d2-node-isolation-1s.md)
+必须与当前 campaign 分开保存。
+
 ## 12. 如何判断传播延迟瓶颈
 
 `p95/p99` 超标本身不能证明服务器处理能力不足。按同一时间窗对齐以下证据：
@@ -1076,7 +1379,8 @@ Pod 和日志；确认该轮无效后才使用 `-Resume -RetryFailed` 创建新�
 | 个别 ELS 热、连接分布明显不均 | Service/长连接分配 | 检查 Pod 连接数、滚动更新和负载均衡 |
 | API update 慢，延迟从写入前就开始 | API/数据库控制路径 | 检查 API、PostgreSQL 和 migration/锁等待 |
 | API 快，但 ELS 在收到 Redis 消息后才变慢 | Redis/pub-sub 或 ELS fan-out | 对齐 Redis 与 ELS 指标、日志和 trace |
-| 只有 `probe_sync_latency_ms` 异常，其他链路正常 | 时钟偏差 | 校验节点和 payload 时间基准 |
+| `control_plane_write_latency_ms` 正常，但 `probe_sync_latency_ms` 高 | Redis→ELS、ELS fan-out 或 runner 接收调度 | 对齐 observer、ELS、runner 和节点 1 秒证据 |
+| `probe_sync_latency_ms` 出现低个位毫秒负值 | 旁路边界或时钟误差 | 校验节点时间同步，并报告误差而不是裁剪样本 |
 | 节点网络/conntrack 接近上限 | AKS 节点或网络层 | 更换 SKU/网络方案，并保持应用配置不变重跑 |
 
 一次只改变一个因素。先证明 runner 不是瓶颈，再调整 ELS；否则无法回答 p95/p99 是由客户端、

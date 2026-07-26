@@ -8,7 +8,7 @@ reports, and reproduction documentation.
 
 | Suite | Status | Scope | Latest evidence |
 | --- | --- | --- | --- |
-| [Server SDK load test](server-sdk-load-test/README.md) | Active | Evaluation Server WebSocket connections, synchronization, flag propagation, heartbeat handling, and revision consistency | [AKS 10k five-group report](server-sdk-load-test/docs/reports/aks-p99-capacity-10k-best-runs.md) |
+| [Server SDK load test](server-sdk-load-test/README.md) | Active | Evaluation Server WebSocket connections, synchronization, flag propagation, heartbeat handling, and revision consistency | [Latest AKS 10k 54-vCPU report](server-sdk-load-test/docs/reports/aks-10k-d4-loadgen-d2-featbit-1s.md) |
 | Client SDK load test | Planned | Browser/client SDK connection and evaluation behavior | Will live in `client-sdk-load-test/` |
 
 ## Repository layout

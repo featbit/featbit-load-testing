@@ -15,16 +15,19 @@ availability_zones = []
 # api_server_authorized_ip_ranges = ["203.0.113.10/32"]
 api_server_authorized_ip_ranges = []
 
-# Ephemeral growth topology:
+# Quota-constrained 10k node-isolation topology:
 # - one small system node;
-# - three target nodes shared by UI, API, and six ELS Pods;
-# - six isolated D4 loadgen nodes (growth uses five; growth-plus scales to ten).
+# - six D2 target nodes, with one ELS Pod per node;
+# - ten isolated D4 loadgen nodes, with two 500-connection runners per node.
+# Total steady-state use is 54 vCPUs. Changing the loadgen VM size in place can
+# temporarily require a second full pool, so follow README-AKS.md's quota-safe
+# rotation sequence when the DDSv5-family quota is 65 vCPUs.
 system_node_vm_size  = "Standard_D2ds_v5"
 system_node_count    = 1
-target_node_vm_size  = "Standard_D4ds_v5"
-target_node_count    = 3
+target_node_vm_size  = "Standard_D2ds_v5"
+target_node_count    = 6
 loadgen_node_vm_size = "Standard_D4ds_v5"
-loadgen_node_count   = 6
+loadgen_node_count   = 10
 
 tags = {
   owner      = "<team-or-user>"

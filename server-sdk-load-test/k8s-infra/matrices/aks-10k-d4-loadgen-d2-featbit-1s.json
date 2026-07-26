@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "matrixId": "aks-10k-d4-loadgen-d2-featbit-1s",
+  "description": "Repeat 20 x 500 runners on ten D4 loadgen nodes with six ELS Pods isolated one per D2 FeatBit node and validated one-second host/cgroup evidence.",
+  "primaryMetric": "Worst per-revision, per-runner probe_sync_latency_ms p99",
+  "successThresholdMs": 1000,
+  "practicalEquivalence": {
+    "relativeFraction": 0.10,
+    "absoluteMilliseconds": 50
+  },
+  "fixed": {
+    "kubernetesContext": "aks-featbit-load-testing",
+    "profile": "growth",
+    "totalConnections": 10000,
+    "connectionsPerSecond": 100,
+    "loadgenNodeCount": 10,
+    "loadgenNodeVmSize": "Standard_D4ds_v5",
+    "featbitNodeCount": 6,
+    "featbitNodeVmSize": "Standard_D2ds_v5",
+    "repetitions": 3,
+    "measuredFlagCount": 1,
+    "provisionedFlagCount": 20,
+    "expectedRevisions": [
+      "rev-001",
+      "rev-002",
+      "rev-003",
+      "rev-004",
+      "rev-005",
+      "rev-006",
+      "rev-007",
+      "rev-008",
+      "rev-009",
+      "rev-010"
+    ],
+    "streamingUrl": "ws://featbit-els.featbit.svc.cluster.local:5100",
+    "configurationApiUrl": "http://featbit-api.featbit.svc.cluster.local:5000",
+    "controllerWarmupSettleSeconds": 2,
+    "controllerStartDelaySeconds": 5,
+    "revisionIntervalSeconds": 30,
+    "controllerFinalSettleSeconds": 30,
+    "holdDurationSeconds": 600,
+    "resourceSampleIntervalSeconds": 5,
+    "nodeEvidenceSampleIntervalSeconds": 1,
+    "elsSettleSeconds": 60,
+    "betweenRunSettleSeconds": 30,
+    "runnerImage": "featbitloadtesting22793c56acr.azurecr.io/featbit-k6@sha256:310326a8dbb80a7312e1e4bc8777b5d8f8a407b8dce03cb8678c4b15f4f02be7",
+    "elsImage": "docker.io/featbit/featbit-evaluation-server:5.4.4",
+    "elsResources": {
+      "cpuRequest": "250m",
+      "cpuLimit": "1",
+      "memoryRequest": "256Mi",
+      "memoryLimit": "512Mi"
+    }
+  },
+  "groups": [
+    {
+      "id": "d4lg-d2fb-e6",
+      "label": "p20 / ELS 6 on 6 D2 nodes / D4 loadgen / strict 1s evidence",
+      "parallelism": 20,
+      "connectionsPerRunner": 500,
+      "runnersPerNode": 2,
+      "elsReplicas": 6,
+      "runnerResources": {
+        "cpuRequest": "500m",
+        "memoryRequest": "1Gi",
+        "memoryLimit": "3Gi"
+      }
+    }
+  ],
+  "excludedRuns": [],
+  "executionOrder": [
+    { "group": "d4lg-d2fb-e6", "replicate": 1 },
+    { "group": "d4lg-d2fb-e6", "replicate": 2 },
+    { "group": "d4lg-d2fb-e6", "replicate": 3 }
+  ]
+}

@@ -7,3 +7,5 @@
 **/k8s-infra/terraform/aks/terraform.tfvars
 **/k8s-infra/terraform/aks/*.auto.tfvars
 **/k8s-infra/terraform/aks/crash.log
+**/k8s-infra/terraform/aks/*-apply.log
+**/k8s-infra/terraform/aks/*-apply.err.log

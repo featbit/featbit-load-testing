@@ -129,7 +129,10 @@ els:
                 app.kubernetes.io/component: els
   resources:
     requests:
-      cpu: 500m
+      # Six D2 target nodes also host PostgreSQL, Redis, API, and UI. A 250m
+      # scheduler reservation lets one ELS Pod land on every node while the
+      # fixed 1-core limit preserves the measured ELS execution ceiling.
+      cpu: 250m
       memory: 256Mi
     limits:
       cpu: "1"

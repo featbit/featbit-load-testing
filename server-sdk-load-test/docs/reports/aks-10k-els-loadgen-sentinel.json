@@ -1,0 +1,485 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-07-26T06:06:01.487Z",
+  "matrixId": "aks-els-loadgen-sentinel",
+  "statePath": "C:\\Code\\featbit\\featbit-load-testing\\server-sdk-load-test\\results\\aks-els-loadgen-sentinel-20260726-123054-state.json",
+  "runIds": [
+    "growth-20260726-043331-ce333a5f-4800",
+    "growth-20260726-050001-ce333a5f-eff2",
+    "growth-20260726-052542-ce333a5f-ad79"
+  ],
+  "totals": {
+    "mainSamples": 300000,
+    "sentinelEvents": 5400,
+    "thresholdFailures": 0
+  },
+  "repeatability": {
+    "mainStreamingAverageMs": {
+      "minimum": 54.085,
+      "median": 54.675,
+      "maximum": 55.503
+    },
+    "mainRunnerRevisionP99MaximumMs": {
+      "minimum": 168,
+      "median": 187,
+      "maximum": 218
+    },
+    "sentinelP99Ms": {
+      "minimum": 104,
+      "median": 108.02,
+      "maximum": 119.01
+    }
+  },
+  "decision": {
+    "status": "continue-loadgen-receiver-diagnosis",
+    "exactComponent": "loadgen receive path is a demonstrated contributor",
+    "mainSpikeRevisions": 28,
+    "isolatedSpikingCells": 45,
+    "totalCellsAcrossRevisions": 1800,
+    "loadgenRowWaves": 3,
+    "elsColumnWaves": 0,
+    "globalWaves": 0,
+    "nodeLocalLoadgenRowWaves": 1,
+    "nodeLocalElsColumnWaves": 0,
+    "nodeLocalGlobalWaves": 0,
+    "nodeLocalSpikingCells": 26,
+    "rowWaveDetails": [
+      {
+        "run": 3,
+        "revisionIndex": 2,
+        "mainRunnerP99MaximumMs": 168,
+        "sentinelP99Ms": 145.42,
+        "loadgenNode": "aks-loadgen-10501918-vmss000006",
+        "affectedTargets": 5,
+        "observerOffsetFromEarliestMs": 3,
+        "survivesNodeLocalBoundary": false,
+        "nodeLocalAffectedTargets": 0,
+        "colocatedMainRunners": [
+          {
+            "runner": 6,
+            "metric": "probe_updated_at_to_sdk_latency_ms",
+            "rawP99Ms": 111,
+            "nodeLocalP99Ms": 98
+          },
+          {
+            "runner": 16,
+            "metric": "probe_updated_at_to_sdk_latency_ms",
+            "rawP99Ms": 139,
+            "nodeLocalP99Ms": 126
+          }
+        ],
+        "resourceWindow": {
+          "cpuMaximumPercent": 29.877,
+          "cpuPressureMaximumPercent": 19.651,
+          "runQueueMaximum": 2,
+          "netRxSoftirqMaximumPerSecond": 3366.667,
+          "tcpRetransmissions": 0,
+          "packetDrops": 0
+        }
+      },
+      {
+        "run": 3,
+        "revisionIndex": 8,
+        "mainRunnerP99MaximumMs": 114,
+        "sentinelP99Ms": 121,
+        "loadgenNode": "aks-loadgen-10501918-vmss000003",
+        "affectedTargets": 6,
+        "observerOffsetFromEarliestMs": 10,
+        "survivesNodeLocalBoundary": true,
+        "nodeLocalAffectedTargets": 6,
+        "colocatedMainRunners": [
+          {
+            "runner": 4,
+            "metric": "probe_updated_at_to_sdk_latency_ms",
+            "rawP99Ms": 124,
+            "nodeLocalP99Ms": 104
+          },
+          {
+            "runner": 14,
+            "metric": "probe_updated_at_to_sdk_latency_ms",
+            "rawP99Ms": 123.02,
+            "nodeLocalP99Ms": 103.02
+          }
+        ],
+        "resourceWindow": {
+          "cpuMaximumPercent": 16.507,
+          "cpuPressureMaximumPercent": 11.985,
+          "runQueueMaximum": 2,
+          "netRxSoftirqMaximumPerSecond": 3405.941,
+          "tcpRetransmissions": 0,
+          "packetDrops": 0
+        }
+      },
+      {
+        "run": 3,
+        "revisionIndex": 9,
+        "mainRunnerP99MaximumMs": 166,
+        "sentinelP99Ms": 117,
+        "loadgenNode": "aks-loadgen-10501918-vmss000003",
+        "affectedTargets": 4,
+        "observerOffsetFromEarliestMs": 10,
+        "survivesNodeLocalBoundary": false,
+        "nodeLocalAffectedTargets": 0,
+        "colocatedMainRunners": [
+          {
+            "runner": 4,
+            "metric": "probe_updated_at_to_sdk_latency_ms",
+            "rawP99Ms": 126,
+            "nodeLocalP99Ms": 102
+          },
+          {
+            "runner": 14,
+            "metric": "probe_updated_at_to_sdk_latency_ms",
+            "rawP99Ms": 132.01,
+            "nodeLocalP99Ms": 108.01
+          }
+        ],
+        "resourceWindow": {
+          "cpuMaximumPercent": 16.377,
+          "cpuPressureMaximumPercent": 15.093,
+          "runQueueMaximum": 1,
+          "netRxSoftirqMaximumPerSecond": 3265.347,
+          "tcpRetransmissions": 0,
+          "packetDrops": 0
+        }
+      }
+    ],
+    "columnWaveDetails": [],
+    "classificationCounts": {
+      "isolated-cells": 11,
+      "loadgen-row": 3,
+      "main-runners-only": 14,
+      "stable": 2
+    },
+    "statement": "三轮出现 3 次预注册 loadgen-row，其中 1 次在同节点 observer 敏感性分析后仍成立；没有 ELS-column 或 global wave。接收端 loadgen node/VM、kernel network wake-up 或其上的进程调度是已证实的尾延迟贡献者，跨节点时钟偏移不能解释全部现象；其余没有形成 row 的主 runner 尾峰仍不能精确归到单个实现组件。"
+  },
+  "runs": [
+    {
+      "sequence": 1,
+      "runId": "growth-20260726-043331-ce333a5f-4800",
+      "main": {
+        "sampleCount": 100000,
+        "streamingAverageMs": 54.675,
+        "runnerRevisionP95MaximumMs": 183,
+        "runnerRevisionP99MaximumMs": 187,
+        "maximumMs": 188,
+        "controlPlaneAverageMs": 16.1,
+        "thresholdFailures": 0
+      },
+      "sentinel": {
+        "readyConnections": 180,
+        "formalEvents": 1800,
+        "averageMs": 52.146,
+        "p95Ms": 93.05,
+        "p99Ms": 104,
+        "maximumMs": 126,
+        "mainSpikeRevisions": 8,
+        "spikingCells": 8,
+        "rowWaves": 0,
+        "columnWaves": 0,
+        "globalWaves": 0,
+        "rowWaveDetails": [],
+        "columnWaveDetails": [],
+        "classifications": {
+          "isolated-cells": 4,
+          "main-runners-only": 4,
+          "stable": 2
+        },
+        "nodeLocal": {
+          "averageMs": 48.166,
+          "p95Ms": 90,
+          "p99Ms": 100,
+          "maximumMs": 114,
+          "spikingCells": 2,
+          "rowWaves": 0,
+          "columnWaves": 0,
+          "globalWaves": 0
+        }
+      },
+      "resources": {
+        "sampleIntervalP50Seconds": 1.02,
+        "loadgenCpuP99Percent": 21.003,
+        "loadgenCpuPressureP99Percent": 13.321,
+        "loadgenRunQueueP99": 5,
+        "loadgenRetransmissionsFullRun": 32,
+        "loadgenPacketDropsFullRun": 0,
+        "elsCpuP99Millicores": 153.711,
+        "elsCpuMaximumMillicores": 390.999,
+        "elsThrottledPeriodRate": 0.0003126,
+        "elsThrottledMilliseconds": 69.097,
+        "revisionRetransmissions": 6,
+        "revisionDrops": 0,
+        "revisionElsThrottledPeriods": 0,
+        "kubernetesPeaks": {
+          "sampleCount": 166,
+          "elsCpuMillicores": 346.02855,
+          "elsMemoryMiB": 910.3828125,
+          "runnerCpuMillicores": 967.3660150000001,
+          "runnerMemoryMiB": 18512.05078125,
+          "sentinelCpuMillicores": 167.624917,
+          "sentinelMemoryMiB": 443.68359375,
+          "apiCpuMillicores": 12.082356,
+          "apiMemoryMiB": 213.56640625,
+          "postgresqlCpuMillicores": 8.035083,
+          "postgresqlMemoryMiB": 38.8359375,
+          "redisCpuMillicores": 29.920567,
+          "redisMemoryMiB": 8.04296875,
+          "featbitNodeCpuMillicores": 2071.8711590000003,
+          "featbitNodeMemoryMiB": 11830.87109375,
+          "loadgenNodeCpuMillicores": 3579.912477,
+          "loadgenNodeMemoryMiB": 36406.12109375
+        }
+      }
+    },
+    {
+      "sequence": 2,
+      "runId": "growth-20260726-050001-ce333a5f-eff2",
+      "main": {
+        "sampleCount": 100000,
+        "streamingAverageMs": 55.503,
+        "runnerRevisionP95MaximumMs": 210,
+        "runnerRevisionP99MaximumMs": 218,
+        "maximumMs": 219,
+        "controlPlaneAverageMs": 16.3,
+        "thresholdFailures": 0
+      },
+      "sentinel": {
+        "readyConnections": 180,
+        "formalEvents": 1800,
+        "averageMs": 54.508,
+        "p95Ms": 97,
+        "p99Ms": 108.02,
+        "maximumMs": 132,
+        "mainSpikeRevisions": 10,
+        "spikingCells": 14,
+        "rowWaves": 0,
+        "columnWaves": 0,
+        "globalWaves": 0,
+        "rowWaveDetails": [],
+        "columnWaveDetails": [],
+        "classifications": {
+          "isolated-cells": 4,
+          "main-runners-only": 6
+        },
+        "nodeLocal": {
+          "averageMs": 50.678,
+          "p95Ms": 92,
+          "p99Ms": 104,
+          "maximumMs": 123,
+          "spikingCells": 10,
+          "rowWaves": 0,
+          "columnWaves": 0,
+          "globalWaves": 0
+        }
+      },
+      "resources": {
+        "sampleIntervalP50Seconds": 1.02,
+        "loadgenCpuP99Percent": 21.953,
+        "loadgenCpuPressureP99Percent": 14.547,
+        "loadgenRunQueueP99": 5,
+        "loadgenRetransmissionsFullRun": 32,
+        "loadgenPacketDropsFullRun": 0,
+        "elsCpuP99Millicores": 145.851,
+        "elsCpuMaximumMillicores": 438.025,
+        "elsThrottledPeriodRate": 0.0002706,
+        "elsThrottledMilliseconds": 122.992,
+        "revisionRetransmissions": 6,
+        "revisionDrops": 0,
+        "revisionElsThrottledPeriods": 0,
+        "kubernetesPeaks": {
+          "sampleCount": 167,
+          "elsCpuMillicores": 337.195067,
+          "elsMemoryMiB": 879,
+          "runnerCpuMillicores": 2775.718309,
+          "runnerMemoryMiB": 18322.67578125,
+          "sentinelCpuMillicores": 75.88086399999999,
+          "sentinelMemoryMiB": 511.28515625,
+          "apiCpuMillicores": 8.108911,
+          "apiMemoryMiB": 214.0234375,
+          "postgresqlCpuMillicores": 7.959197,
+          "postgresqlMemoryMiB": 41.078125,
+          "redisCpuMillicores": 32.284448,
+          "redisMemoryMiB": 8.4765625,
+          "featbitNodeCpuMillicores": 2081.5179630000002,
+          "featbitNodeMemoryMiB": 11809.48046875,
+          "loadgenNodeCpuMillicores": 3697.362255,
+          "loadgenNodeMemoryMiB": 36447.9296875
+        }
+      }
+    },
+    {
+      "sequence": 3,
+      "runId": "growth-20260726-052542-ce333a5f-ad79",
+      "main": {
+        "sampleCount": 100000,
+        "streamingAverageMs": 54.085,
+        "runnerRevisionP95MaximumMs": 165,
+        "runnerRevisionP99MaximumMs": 168,
+        "maximumMs": 170,
+        "controlPlaneAverageMs": 15.8,
+        "thresholdFailures": 0
+      },
+      "sentinel": {
+        "readyConnections": 180,
+        "formalEvents": 1800,
+        "averageMs": 53.592,
+        "p95Ms": 96,
+        "p99Ms": 119.01,
+        "maximumMs": 151,
+        "mainSpikeRevisions": 10,
+        "spikingCells": 23,
+        "rowWaves": 3,
+        "columnWaves": 0,
+        "globalWaves": 0,
+        "rowWaveDetails": [
+          {
+            "revisionIndex": 2,
+            "mainRunnerP99MaximumMs": 168,
+            "sentinelP99Ms": 145.42,
+            "loadgenNode": "aks-loadgen-10501918-vmss000006",
+            "affectedTargets": 5,
+            "observerOffsetFromEarliestMs": 3,
+            "survivesNodeLocalBoundary": false,
+            "nodeLocalAffectedTargets": 0,
+            "colocatedMainRunners": [
+              {
+                "runner": 6,
+                "metric": "probe_updated_at_to_sdk_latency_ms",
+                "rawP99Ms": 111,
+                "nodeLocalP99Ms": 98
+              },
+              {
+                "runner": 16,
+                "metric": "probe_updated_at_to_sdk_latency_ms",
+                "rawP99Ms": 139,
+                "nodeLocalP99Ms": 126
+              }
+            ],
+            "resourceWindow": {
+              "cpuMaximumPercent": 29.877,
+              "cpuPressureMaximumPercent": 19.651,
+              "runQueueMaximum": 2,
+              "netRxSoftirqMaximumPerSecond": 3366.667,
+              "tcpRetransmissions": 0,
+              "packetDrops": 0
+            }
+          },
+          {
+            "revisionIndex": 8,
+            "mainRunnerP99MaximumMs": 114,
+            "sentinelP99Ms": 121,
+            "loadgenNode": "aks-loadgen-10501918-vmss000003",
+            "affectedTargets": 6,
+            "observerOffsetFromEarliestMs": 10,
+            "survivesNodeLocalBoundary": true,
+            "nodeLocalAffectedTargets": 6,
+            "colocatedMainRunners": [
+              {
+                "runner": 4,
+                "metric": "probe_updated_at_to_sdk_latency_ms",
+                "rawP99Ms": 124,
+                "nodeLocalP99Ms": 104
+              },
+              {
+                "runner": 14,
+                "metric": "probe_updated_at_to_sdk_latency_ms",
+                "rawP99Ms": 123.02,
+                "nodeLocalP99Ms": 103.02
+              }
+            ],
+            "resourceWindow": {
+              "cpuMaximumPercent": 16.507,
+              "cpuPressureMaximumPercent": 11.985,
+              "runQueueMaximum": 2,
+              "netRxSoftirqMaximumPerSecond": 3405.941,
+              "tcpRetransmissions": 0,
+              "packetDrops": 0
+            }
+          },
+          {
+            "revisionIndex": 9,
+            "mainRunnerP99MaximumMs": 166,
+            "sentinelP99Ms": 117,
+            "loadgenNode": "aks-loadgen-10501918-vmss000003",
+            "affectedTargets": 4,
+            "observerOffsetFromEarliestMs": 10,
+            "survivesNodeLocalBoundary": false,
+            "nodeLocalAffectedTargets": 0,
+            "colocatedMainRunners": [
+              {
+                "runner": 4,
+                "metric": "probe_updated_at_to_sdk_latency_ms",
+                "rawP99Ms": 126,
+                "nodeLocalP99Ms": 102
+              },
+              {
+                "runner": 14,
+                "metric": "probe_updated_at_to_sdk_latency_ms",
+                "rawP99Ms": 132.01,
+                "nodeLocalP99Ms": 108.01
+              }
+            ],
+            "resourceWindow": {
+              "cpuMaximumPercent": 16.377,
+              "cpuPressureMaximumPercent": 15.093,
+              "runQueueMaximum": 1,
+              "netRxSoftirqMaximumPerSecond": 3265.347,
+              "tcpRetransmissions": 0,
+              "packetDrops": 0
+            }
+          }
+        ],
+        "columnWaveDetails": [],
+        "classifications": {
+          "isolated-cells": 3,
+          "loadgen-row": 3,
+          "main-runners-only": 4
+        },
+        "nodeLocal": {
+          "averageMs": 50.192,
+          "p95Ms": 92,
+          "p99Ms": 110.01,
+          "maximumMs": 148,
+          "spikingCells": 14,
+          "rowWaves": 1,
+          "columnWaves": 0,
+          "globalWaves": 0
+        }
+      },
+      "resources": {
+        "sampleIntervalP50Seconds": 1.02,
+        "loadgenCpuP99Percent": 22.937,
+        "loadgenCpuPressureP99Percent": 14.856,
+        "loadgenRunQueueP99": 6,
+        "loadgenRetransmissionsFullRun": 11,
+        "loadgenPacketDropsFullRun": 0,
+        "elsCpuP99Millicores": 152.035,
+        "elsCpuMaximumMillicores": 466.495,
+        "elsThrottledPeriodRate": 0.0002077,
+        "elsThrottledMilliseconds": 109.9,
+        "revisionRetransmissions": 0,
+        "revisionDrops": 0,
+        "revisionElsThrottledPeriods": 0,
+        "kubernetesPeaks": {
+          "sampleCount": 166,
+          "elsCpuMillicores": 373.410585,
+          "elsMemoryMiB": 920,
+          "runnerCpuMillicores": 1204.016917,
+          "runnerMemoryMiB": 18330.56640625,
+          "sentinelCpuMillicores": 200.791462,
+          "sentinelMemoryMiB": 532.421875,
+          "apiCpuMillicores": 8.331107,
+          "apiMemoryMiB": 214.37109375,
+          "postgresqlCpuMillicores": 7.59925,
+          "postgresqlMemoryMiB": 41.1328125,
+          "redisCpuMillicores": 33.011472,
+          "redisMemoryMiB": 8.2578125,
+          "featbitNodeCpuMillicores": 2238.078856,
+          "featbitNodeMemoryMiB": 11857.60546875,
+          "loadgenNodeCpuMillicores": 3744.835196,
+          "loadgenNodeMemoryMiB": 36616.96875
+        }
+      }
+    }
+  ]
+}

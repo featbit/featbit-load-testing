@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AKS 10k 三阶段延迟验证</title>
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:1180px;margin:40px auto;padding:0 24px;color:#172033;background:#f7f9fc}
+h1,h2{color:#102a43}.subtitle{color:#52667a}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+.card{background:#fff;border:1px solid #d9e2ec;border-radius:12px;padding:20px;box-shadow:0 4px 14px #102a4310}
+.value{font-size:30px;font-weight:700;color:#087f5b}.label{font-size:14px;color:#52667a}.detail{margin-top:8px;color:#334e68}
+table{width:100%;border-collapse:collapse;background:#fff}th,td{padding:10px;border:1px solid #d9e2ec;text-align:right}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}code{background:#e9f2ff;padding:2px 5px;border-radius:4px}
+.note{background:#fff4e6;border-left:4px solid #f08c00;padding:14px 18px;margin-top:20px}
+</style>
+</head>
+<body>
+<h1>AKS 10k 三阶段延迟初步验证</h1>
+<p class="subtitle">Run <code>growth-20260725-152154-ce333a5f-bb94</code> · 20 × 500 runners · 6 ELS Pods</p>
+<p><code>probe_sync_latency_ms</code> = <code>streaming_delivery_latency_ms</code></p>
+<div class="cards">
+<div class="card"><div class="label">端到端平均</div><div class="value">65.82 ms</div><div class="detail">PUT → SDK；runner × revision p99 70.01–209.01 ms</div></div>
+<div class="card"><div class="label">控制面写入平均</div><div class="value">16.20 ms</div><div class="detail">PUT → Redis publication；p95 21.10 ms / p99 21.82 ms</div></div>
+<div class="card"><div class="label">Streaming 投递平均（canonical probe_sync）</div><div class="value">49.62 ms</div><div class="detail">Redis publication → SDK；runner × revision p95 53.05–190 ms / p99 55.01–193.01 ms</div></div>
+</div>
+<h2>Revision 明细</h2>
+<table>
+<thead><tr><th>#</th><th>Revision</th><th>Control plane</th><th>Streaming avg</th><th>Streaming p95</th><th>Streaming p99</th><th>End-to-end avg</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>rev-001</td><td>16 ms</td><td>51.99 ms</td><td>66–95 ms</td><td>68–97 ms</td><td>67.99 ms</td></tr>
+<tr><td>2</td><td>rev-002</td><td>15 ms</td><td>46.12 ms</td><td>58–104 ms</td><td>60–108 ms</td><td>61.12 ms</td></tr>
+<tr><td>3</td><td>rev-003</td><td>14 ms</td><td>49.84 ms</td><td>60–141 ms</td><td>63–146 ms</td><td>63.84 ms</td></tr>
+<tr><td>4</td><td>rev-004</td><td>20 ms</td><td>48.22 ms</td><td>55–150 ms</td><td>57–151 ms</td><td>68.22 ms</td></tr>
+<tr><td>5</td><td>rev-005</td><td>22 ms</td><td>52.87 ms</td><td>63–150 ms</td><td>65–154 ms</td><td>74.87 ms</td></tr>
+<tr><td>6</td><td>rev-006</td><td>15 ms</td><td>46.64 ms</td><td>53.05–97 ms</td><td>55.01–99 ms</td><td>61.64 ms</td></tr>
+<tr><td>7</td><td>rev-007</td><td>14 ms</td><td>53.22 ms</td><td>63–178 ms</td><td>66–183.01 ms</td><td>67.22 ms</td></tr>
+<tr><td>8</td><td>rev-008</td><td>15 ms</td><td>49.30 ms</td><td>57–169 ms</td><td>63–172 ms</td><td>64.30 ms</td></tr>
+<tr><td>9</td><td>rev-009</td><td>16 ms</td><td>52.89 ms</td><td>63–190 ms</td><td>65–193.01 ms</td><td>68.89 ms</td></tr>
+<tr><td>10</td><td>rev-010</td><td>15 ms</td><td>45.11 ms</td><td>61–92 ms</td><td>68–93 ms</td><td>60.11 ms</td></tr>
+</tbody>
+</table>
+<div class="note">10 个只读 Redis SUBSCRIBE observer 中最早的到达时间近似 PUBLISH 边界。本轮 -2 ms 最小值表示约 2 ms 的时钟/边界误差，不表示真实负延迟。平均值和尾百分位可用于初步验证，亚毫秒与低个位毫秒不可作精确归因。</div>
+</body>
+</html>

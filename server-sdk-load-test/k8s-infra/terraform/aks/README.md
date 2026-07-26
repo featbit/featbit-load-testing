@@ -22,15 +22,19 @@ parent [AKS runbook](../../README-AKS.md) to install the k6 Operator and run the
 Run relative-path commands in this document from the repository's
 `server-sdk-load-test/` directory.
 
-## Default topology
+## Checked-in quota-constrained topology
 
 | Pool | Default | Purpose |
 | --- | --- | --- |
 | `system` | `1 × Standard_D2ds_v5` | Temporary AKS system services |
-| `featbit` | `3 × Standard_D4ds_v5` in the active test stack | UI/API plus six ELS Pods |
-| `loadgen` | `6 × Standard_D4ds_v5` for growth | One k6 runner per node; growth-plus uses 10 |
+| `featbit` | `6 × Standard_D2ds_v5` | UI/API/dependencies plus six ELS Pods, strictly one ELS per node |
+| `loadgen` | `10 × Standard_D4ds_v5` | Twenty 500-connection runners, two per node |
 
-The active test values spread six ELS replicas evenly across three target nodes.
+This is the exact 54-vCPU topology used by the
+[quota-safe D4-loadgen validation](../../../docs/reports/aks-10k-d4-loadgen-d2-featbit-1s.md).
+It fits the existing 65-vCPU regional and DDSv5-family quota without an
+increase. All three 10,000-connection repetitions passed; the conservative
+p99 median was 283.01 ms.
 
 The one-node system pool is also an explicit cost tradeoff. A system-node failure invalidates that
 run. It is not a production AKS recommendation.
@@ -65,24 +69,24 @@ kubectl --context $aksContext get nodes -L agentpool,workload -o wide
 Do not reuse a plan after changing variables or after a failed apply. `terraform.tfvars`, state files,
 plans, and `.terraform/` are ignored by Git.
 
-The growth profile needs at least five loadgen nodes; the checked-in active stack has six.
-Before growth-plus, scale the same D4 pool to ten nodes with a reviewed plan:
+Do not infer FeatBit capacity from a run in which loadgen CPU pressure is high.
+The historical 50k experiment also showed about `5.33Gi` peak memory for a
+5,000-connection runner, so every topology change must re-check both CPU
+pressure and memory rather than only `kubectl top`.
 
-```powershell
-Set-Location .\k8s-infra\terraform\aks
+The checked-in topology uses:
 
-terraform plan `
-  -var="loadgen_node_count=10" `
-  -out featbit-growth-plus.tfplan
-
-terraform apply featbit-growth-plus.tfplan
-terraform output node_pools
+```text
+system 1 × 2 vCPU + featbit 6 × 2 vCPU + loadgen 10 × 4 vCPU = 54 vCPU
 ```
 
-Do not change `loadgen_node_vm_size` in the same experiment. The historical 50k experiment showed
-about `5.33Gi` peak memory for a 5,000-connection runner. The 20k follow-up keeps D4 so the capacity
-comparison does not also change the generator SKU. After all 20k evidence is collected, scale back
-with a new reviewed plan.
+For a fresh ephemeral cluster, one apply can create this topology directly.
+Changing an existing node pool's VM size forces replacement. With only 11
+vCPUs of headroom, the AzureRM provider may otherwise try to overlap a
+temporary pool and the full final pool and exceed quota. Rotate one pool at a
+time, inspect every fresh plan, and ensure temporary capacity is removed or
+reduced before creating the final ten-node D4 pool. Never reuse the plan from
+a failed replacement.
 
 The local state is suitable for a manual ephemeral run. CI should use a remote backend that lives
 outside AKS. Do not store the backend in the AKS-managed node resource group because that group is
@@ -112,9 +116,14 @@ together with its bundled PostgreSQL and Redis subcharts:
 This is a disposable load-test configuration. FeatBit production deployments must use managed
 external PostgreSQL and Redis. The values file schedules every application and data Pod onto the
 tainted `workload=featbit` pool; omitting its node selector or toleration leaves Pods Pending.
-Each ELS replica has a fixed `1 CPU` request and limit, HPA is disabled, and the replica count stays
-at three so CPU saturation is visible instead of being hidden by scheduling or scaling changes.
-This measures the capacity of a `3 × 1 vCPU` ELS profile, not an unlimited product ceiling. The
+Each ELS replica has a fixed `250m` CPU request and `1 CPU` limit, HPA is
+disabled, and the replica count stays at six so CPU saturation is visible
+instead of being hidden by scheduling or scaling changes. The lower request
+is only a scheduler reservation needed to fit PostgreSQL, Redis, API, UI, and
+one ELS on each D2 target node; the unchanged one-core limit preserves the
+measured ELS execution ceiling.
+This measures the capacity of a `6 × 1 vCPU-limit` ELS profile, not an
+unlimited product ceiling. The
 request reserves schedulable capacity, while the limit applies a cgroup quota; it does not promise
 an exclusive physical core. Correlate latency with ELS CPU and CFS-throttling metrics.
 PostgreSQL and Redis deliberately have no CPU limit: each reserves one core but may use spare target
@@ -150,7 +159,7 @@ kubectl --context $aksContext get nodes `
 kubectl --context $aksContext get storageclass managed-csi-premium -o name
 ```
 
-Expected pools are `system` (`1` node), `featbit` (`2` nodes), and `loadgen` (`2` nodes), and the
+Expected pools are `system` (`1` node), `featbit` (`6` nodes), and `loadgen` (`10` nodes), and the
 Premium Azure Disk storage class must exist. Continue to pass `--context` to `kubectl` and
 `--kube-context` to Helm even after changing the default.
 
@@ -352,8 +361,8 @@ foreach ($serviceName in @("featbit-ui", "featbit-api", "featbit-els")) {
 Confirm:
 
 - UI and API each have one Ready Pod;
-- ELS has `3/3` Ready Pods, distributed across the two `featbit` nodes as `2 + 1`;
-- ELS reports `3`, `1`, `1`, and `1Gi` for replicas, CPU request, CPU limit, and memory limit;
+- ELS has `6/6` Ready Pods, distributed exactly one per each of the six `featbit` nodes;
+- ELS reports `6`, `250m`, `1`, and `512Mi` for replicas, CPU request, CPU limit, and memory limit;
 - PostgreSQL and Redis StatefulSets are Ready and have Bound PVCs;
 - PostgreSQL reports `1`, `<none>`, `2Gi`, and `4Gi`; Redis reports `1`, `<none>`, `1Gi`, and
   `2Gi` for CPU request, CPU limit, memory request, and memory limit;

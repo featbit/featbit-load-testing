@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "matrixId": "aks-els-loadgen-sentinel",
+  "description": "Three 10k runs with a 10-loadgen x 6-ELS direct sentinel matrix that separates ELS-column and loadgen-row propagation waves without changing FeatBit source.",
+  "primaryMetric": "Post-processed probe_sync_latency_ms plus pre-registered sentinel row/column classification",
+  "successThresholdMs": 1000,
+  "practicalEquivalence": {
+    "relativeFraction": 0.10,
+    "absoluteMilliseconds": 50
+  },
+  "fixed": {
+    "kubernetesContext": "aks-featbit-load-testing",
+    "profile": "growth",
+    "totalConnections": 10000,
+    "connectionsPerSecond": 100,
+    "loadgenNodeCount": 10,
+    "loadgenNodeVmSize": "Standard_D4ds_v5",
+    "featbitNodeCount": 6,
+    "featbitNodeVmSize": "Standard_D2ds_v5",
+    "repetitions": 3,
+    "measuredFlagCount": 1,
+    "provisionedFlagCount": 20,
+    "expectedRevisions": [
+      "rev-001",
+      "rev-002",
+      "rev-003",
+      "rev-004",
+      "rev-005",
+      "rev-006",
+      "rev-007",
+      "rev-008",
+      "rev-009",
+      "rev-010"
+    ],
+    "streamingUrl": "ws://featbit-els.featbit.svc.cluster.local:5100",
+    "configurationApiUrl": "http://featbit-api.featbit.svc.cluster.local:5000",
+    "controllerWarmupSettleSeconds": 2,
+    "controllerStartDelaySeconds": 5,
+    "revisionIntervalSeconds": 30,
+    "controllerFinalSettleSeconds": 30,
+    "holdDurationSeconds": 600,
+    "resourceSampleIntervalSeconds": 5,
+    "nodeEvidenceSampleIntervalSeconds": 1,
+    "enableStageLatencyTiming": true,
+    "enableElsSentinelMatrix": true,
+    "sentinelConnectionsPerTarget": 3,
+    "sentinelHoldDurationSeconds": 1800,
+    "elsSettleSeconds": 60,
+    "betweenRunSettleSeconds": 60,
+    "runnerImage": "featbitloadtesting22793c56acr.azurecr.io/featbit-k6@sha256:6be2bc244f5da38580961c3c23e2bafb95035e1ff2d70f41b6f19e9ffbe3b7df",
+    "elsImage": "docker.io/featbit/featbit-evaluation-server:5.4.4",
+    "elsResources": {
+      "cpuRequest": "250m",
+      "cpuLimit": "1",
+      "memoryRequest": "256Mi",
+      "memoryLimit": "512Mi"
+    }
+  },
+  "groups": [
+    {
+      "id": "sentinel-p20",
+      "label": "20 x 500 main runners; 6 ELS Pods on 6 D2 nodes; 10 x 6 x 3 direct sentinels",
+      "parallelism": 20,
+      "connectionsPerRunner": 500,
+      "runnersPerNode": 2,
+      "elsReplicas": 6,
+      "runnerResources": {
+        "cpuRequest": "500m",
+        "memoryRequest": "1Gi",
+        "memoryLimit": "3Gi"
+      }
+    }
+  ],
+  "excludedRuns": [],
+  "executionOrder": [
+    {
+      "group": "sentinel-p20",
+      "replicate": 1
+    },
+    {
+      "group": "sentinel-p20",
+      "replicate": 2
+    },
+    {
+      "group": "sentinel-p20",
+      "replicate": 3
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "status": "preliminary",
+  "runId": "growth-20260725-152154-ce333a5f-bb94",
+  "contract": {
+    "totalConnections": 10000,
+    "connectionsPerSecond": 100,
+    "parallelism": 20,
+    "connectionsPerRunner": 500,
+    "loadgenNodes": 10,
+    "loadgenVmSize": "Standard_D4ds_v5",
+    "elsPods": 6,
+    "featbitNodes": 6,
+    "featbitVmSize": "Standard_D2ds_v5",
+    "provisionedFlags": 20,
+    "measuredFlags": 1,
+    "formalRevisions": 10
+  },
+  "definitions": {
+    "end_to_end_latency_ms": "controller PUT request start -> SDK applies revision",
+    "control_plane_write_latency_ms": "controller PUT request start -> earliest Redis publication observation across loadgen nodes",
+    "probe_sync_latency_ms": "earliest Redis publication observation across loadgen nodes -> SDK applies revision",
+    "probe_sync_alias": "streaming_delivery_latency_ms",
+    "legacyRawMetric": "probe_updated_at_to_sdk_latency_ms",
+    "distributedPercentiles": "min-max range across runner x revision cohorts; not a merged global percentile"
+  },
+  "equation": "end_to_end_latency_ms = control_plane_write_latency_ms + probe_sync_latency_ms",
+  "metrics": {
+    "end_to_end_latency_ms": {
+      "count": 100000,
+      "avg": 65.81981,
+      "min": 12,
+      "max": 219,
+      "runnerRevisionP95Range": [68.05, 206],
+      "runnerRevisionP99Range": [70.01, 209.01]
+    },
+    "control_plane_write_latency_ms": {
+      "count": 10,
+      "avg": 16.2,
+      "min": 14,
+      "median": 15,
+      "p95": 21.1,
+      "p99": 21.82,
+      "max": 22
+    },
+    "probe_sync_latency_ms": {
+      "alias": "streaming_delivery_latency_ms",
+      "count": 100000,
+      "avg": 49.61981,
+      "min": -2,
+      "max": 203,
+      "runnerRevisionP95Range": [53.05, 190],
+      "runnerRevisionP99Range": [55.01, 193.01]
+    },
+    "probe_updated_at_to_sdk_latency_ms": {
+      "count": 100000,
+      "avg": 63.01981,
+      "min": 10,
+      "max": 217,
+      "runnerRevisionP95Range": [64.05, 204],
+      "runnerRevisionP99Range": [66.01, 207.01]
+    }
+  },
+  "observer": {
+    "pods": 10,
+    "nodes": 10,
+    "formalEventMatches": 100,
+    "arrivalSpreadMs": {
+      "median": 5,
+      "p95": 34.3,
+      "max": 37
+    },
+    "observedCpuMillicoresRange": [0.976978, 1.144487],
+    "observedMemoryBytesRange": [7958528, 7983104],
+    "caveat": "The -2 ms minimum is measurement uncertainty, not physical negative latency."
+  },
+  "validation": {
+    "runnerThresholdsPassed": 20,
+    "runnerThresholdsTotal": 20,
+    "formalSamples": 100000,
+    "warmupChecksPassed": 10000,
+    "connections": 10000,
+    "controllerStarts": 10,
+    "controllerEnds": 10,
+    "controllerErrors": 0,
+    "resourceSamples": 167,
+    "resourceEvidenceComplete": true
+  }
+}

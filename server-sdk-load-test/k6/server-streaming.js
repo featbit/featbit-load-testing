@@ -179,16 +179,20 @@ const postRampWarmupCoverage = new Rate("post_ramp_warmup_coverage");
 const probeRevisionCoverage = new Rate("probe_revision_coverage");
 const finalAppliedRevisionSuccess = new Rate("final_applied_revision_success");
 const controllerUpdateSuccess = new Rate("controller_update_success");
-const probeSyncOver60Ms = new Rate("probe_sync_over_60ms");
-const probeSyncOver80Ms = new Rate("probe_sync_over_80ms");
-const probeSyncOver100Ms = new Rate("probe_sync_over_100ms");
+const probeUpdatedAtToSdkOver60Ms = new Rate("probe_updated_at_to_sdk_over_60ms");
+const probeUpdatedAtToSdkOver80Ms = new Rate("probe_updated_at_to_sdk_over_80ms");
+const probeUpdatedAtToSdkOver100Ms = new Rate("probe_updated_at_to_sdk_over_100ms");
 
 const connectionOpenLatency = new Trend("connection_open_latency_ms", true);
 const initialSyncLatency = new Trend("initial_sync_latency_ms", true);
 const postRampWarmupLatency = new Trend("post_ramp_warmup_latency_ms", true);
-const probeSyncLatency = new Trend("probe_sync_latency_ms", true);
-const probeSyncLatencyWithoutSpikes = new Trend(
-  "probe_sync_latency_without_spikes_ms",
+// This raw clock starts at FeatureFlag.UpdatedAt, which is earlier than the
+// Redis publication boundary. The post-run stage analyzer subtracts the
+// earliest Redis observer offset and publishes the result under the canonical
+// probe_sync_latency_ms name.
+const probeUpdatedAtToSdkLatency = new Trend("probe_updated_at_to_sdk_latency_ms", true);
+const probeUpdatedAtToSdkLatencyWithoutSpikes = new Trend(
+  "probe_updated_at_to_sdk_latency_without_spikes_ms",
   true,
 );
 const applicationPongLatency = new Trend("application_pong_latency_ms", true);
@@ -229,7 +233,10 @@ const thresholds = {
   unexpected_revision: ["count==0"],
   clock_skew_detected: ["count==0"],
   initial_sync_latency_ms: [`p(99)<${INITIAL_SYNC_P99_MS}`],
-  probe_sync_latency_ms: [`p(95)<${SYNC_P95_MS}`, `p(99)<${SYNC_P99_MS}`],
+  probe_updated_at_to_sdk_latency_ms: [
+    `p(95)<${SYNC_P95_MS}`,
+    `p(99)<${SYNC_P99_MS}`,
+  ],
 };
 
 if (POST_RAMP_WARMUP_FLAG_KEY) {
@@ -244,11 +251,13 @@ if (STRICT_PATCH_DELIVERY) {
 
 for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
   thresholds[`probe_revision_coverage{revision_index:${index + 1}}`] = ["rate==1"];
-  thresholds[`probe_sync_latency_ms{revision_index:${index + 1}}`] = [
+  thresholds[`probe_updated_at_to_sdk_latency_ms{revision_index:${index + 1}}`] = [
     `p(95)<${SYNC_P95_MS}`,
     `p(99)<${SYNC_P99_MS}`,
   ];
-  thresholds[`probe_sync_over_100ms{revision_index:${index + 1}}`] = ["rate<=1"];
+  thresholds[`probe_updated_at_to_sdk_over_100ms{revision_index:${index + 1}}`] = [
+    "rate<=1",
+  ];
 }
 
 if (AUTO_CONTROL_REVISIONS && LOADTEST_PARALLELISM === 1) {
@@ -367,12 +376,12 @@ function recordProbePatch(snapshot, probeState) {
     clockSkewDetected.add(1, revisionTags);
   }
 
-  probeSyncLatency.add(latencyMs, revisionTags);
-  probeSyncOver60Ms.add(latencyMs > 60, revisionTags);
-  probeSyncOver80Ms.add(latencyMs > 80, revisionTags);
-  probeSyncOver100Ms.add(latencyMs > 100, revisionTags);
+  probeUpdatedAtToSdkLatency.add(latencyMs, revisionTags);
+  probeUpdatedAtToSdkOver60Ms.add(latencyMs > 60, revisionTags);
+  probeUpdatedAtToSdkOver80Ms.add(latencyMs > 80, revisionTags);
+  probeUpdatedAtToSdkOver100Ms.add(latencyMs > 100, revisionTags);
   if (latencyMs <= 100) {
-    probeSyncLatencyWithoutSpikes.add(latencyMs, revisionTags);
+    probeUpdatedAtToSdkLatencyWithoutSpikes.add(latencyMs, revisionTags);
   }
   probeRevisionReceived.add(1, revisionTags);
 }
@@ -459,6 +468,29 @@ function isRevisionConflict(error) {
   );
 }
 
+function measuredRevisionIndex(phase) {
+  const match = /^measured revision (\d+)$/.exec(phase);
+  return match ? Number(match[1]) : 0;
+}
+
+function logControlTiming(event, atMs, flagKey, revision, revisionIndex, attempt) {
+  // Pipe-delimited fields avoid JSON escaping by the k6 console formatter.
+  // All values are generated identifiers with no pipe characters.
+  console.log(
+    [
+      "STREAM_CONTROL",
+      "1",
+      event,
+      String(atMs),
+      RUN_ID,
+      String(revisionIndex),
+      revision,
+      flagKey,
+      String(attempt),
+    ].join("|"),
+  );
+}
+
 function setProbeFlagValue(
   flagKey,
   targetValue,
@@ -493,6 +525,18 @@ function setProbeFlagValue(
         `Load test ${RUN_ID}: ${phase}`,
       );
       const flagUrl = buildFeatureFlagUrl(FEATBIT_API_URL, FEATBIT_ENVIRONMENT_ID, flagKey);
+      const revisionIndex = measuredRevisionIndex(phase);
+      const requestStartedAtMs = Date.now();
+      if (recordExpectedRevision) {
+        logControlTiming(
+          "request_start",
+          requestStartedAtMs,
+          flagKey,
+          targetValue,
+          revisionIndex,
+          attempt,
+        );
+      }
 
       try {
         controllerRequest(
@@ -502,7 +546,27 @@ function setProbeFlagValue(
           "controller_update_targeting",
           metricTags,
         );
+        if (recordExpectedRevision) {
+          logControlTiming(
+            "request_end",
+            Date.now(),
+            flagKey,
+            targetValue,
+            revisionIndex,
+            attempt,
+          );
+        }
       } catch (error) {
+        if (recordExpectedRevision) {
+          logControlTiming(
+            "request_error",
+            Date.now(),
+            flagKey,
+            targetValue,
+            revisionIndex,
+            attempt,
+          );
+        }
         if (attempt < 3 && isRevisionConflict(error)) {
           sleep(attempt * 0.25);
           continue;

@@ -1,0 +1,613 @@
+{
+    "root_group": {
+        "checks": {},
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {}
+    },
+    "metrics": {
+        "vus_max": {
+            "value": 500,
+            "min": 500,
+            "max": 500
+        },
+        "iterations": {
+            "count": 500,
+            "rate": 0.6241984410040715
+        },
+        "vus": {
+            "value": 500,
+            "min": 0,
+            "max": 500
+        },
+        "probe_revision_coverage{revision_index:6}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_sync_latency_ms{revision_index:6}": {
+            "p(95)": 98,
+            "p(99)": 101,
+            "count": 500,
+            "avg": 60.91,
+            "min": 14,
+            "med": 63,
+            "max": 101,
+            "p(90)": 93,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "final_applied_revision_success": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_revision_coverage{revision_index:4}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "unexpected_revision": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "websocket_error": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_revision_coverage{revision_index:9}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_sync_latency_ms{revision_index:2}": {
+            "p(95)": 86,
+            "p(99)": 88.00999999999999,
+            "count": 500,
+            "avg": 53.66,
+            "min": 14,
+            "med": 55,
+            "max": 90,
+            "p(90)": 82,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_revision_coverage{revision_index:10}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_sync_over_100ms{revision_index:10}": {
+            "fails": 421,
+            "passes": 79,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.158
+        },
+        "probe_sync_over_100ms{revision_index:6}": {
+            "passes": 7,
+            "fails": 493,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.014
+        },
+        "probe_sync_over_80ms": {
+            "passes": 1732,
+            "fails": 3268,
+            "value": 0.3464
+        },
+        "probe_revision_coverage{revision_index:3}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_sync_over_100ms{revision_index:4}": {
+            "passes": 0,
+            "fails": 500,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0
+        },
+        "probe_sync_latency_ms{revision_index:5}": {
+            "max": 178,
+            "p(90)": 108.30000000000007,
+            "p(95)": 147,
+            "p(99)": 167.02999999999997,
+            "count": 500,
+            "avg": 84.008,
+            "min": 23,
+            "med": 86,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_revision_received": {
+            "count": 5000,
+            "rate": 6.241984410040716
+        },
+        "probe_sync_latency_ms{revision_index:1}": {
+            "min": 18,
+            "med": 78,
+            "max": 126,
+            "p(90)": 115,
+            "p(95)": 120,
+            "p(99)": 125,
+            "count": 500,
+            "avg": 75.032,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_sync_latency_ms{revision_index:9}": {
+            "avg": 62.772,
+            "min": 16,
+            "med": 64.5,
+            "max": 97,
+            "p(90)": 91,
+            "p(95)": 94,
+            "p(99)": 96.00999999999999,
+            "count": 500,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_revision_coverage{revision_index:2}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "data_received": {
+            "rate": 37296.54346827838,
+            "count": 29875550
+        },
+        "connection_open_success": {
+            "fails": 0,
+            "passes": 500,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_sync_over_100ms{revision_index:3}": {
+            "passes": 109,
+            "fails": 391,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.218
+        },
+        "initial_sync_success": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "ws_session_duration": {
+            "count": 500,
+            "avg": 680082.1084430158,
+            "min": 630181.460405,
+            "med": 680080.766996,
+            "max": 729977.228241,
+            "p(90)": 720000.9211027,
+            "p(95)": 724990.9013532,
+            "p(99)": 728980.18731816
+        },
+        "probe_sync_over_100ms{revision_index:8}": {
+            "passes": 150,
+            "fails": 350,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.3
+        },
+        "ready_before_hold": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "connection_opened": {
+            "count": 500,
+            "rate": 0.6241984410040715,
+            "thresholds": {
+                "count>=500": false,
+                "count<=500": false
+            }
+        },
+        "iteration_duration": {
+            "p(99)": 739973.5156389399,
+            "count": 500,
+            "avg": 691081.1697838138,
+            "min": 641178.62206,
+            "med": 691073.99761,
+            "max": 740977.477829,
+            "p(90)": 730991.0466999,
+            "p(95)": 735992.0937912
+        },
+        "heartbeat_timeout": {
+            "rate": 0,
+            "count": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_sync_over_100ms{revision_index:7}": {
+            "passes": 97,
+            "fails": 403,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.194
+        },
+        "pong_received": {
+            "count": 22425,
+            "rate": 27.99530007903261
+        },
+        "probe_sync_latency_ms{revision_index:10}": {
+            "min": 20,
+            "med": 75.5,
+            "max": 106,
+            "p(90)": 102,
+            "p(95)": 104,
+            "p(99)": 105,
+            "count": 500,
+            "avg": 71.01,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "ws_msgs_received": {
+            "count": 28925,
+            "rate": 36.10987981208554
+        },
+        "post_ramp_warmup_patch_received": {
+            "count": 1000,
+            "rate": 1.248396882008143
+        },
+        "full_sync_received": {
+            "count": 500,
+            "rate": 0.6241984410040715
+        },
+        "probe_revision_coverage": {
+            "fails": 0,
+            "passes": 5000,
+            "value": 1
+        },
+        "probe_sync_over_60ms": {
+            "passes": 2927,
+            "fails": 2073,
+            "value": 0.5854
+        },
+        "post_ramp_warmup_coverage": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "invalid_message": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_revision_coverage{revision_index:7}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "ws_sessions": {
+            "count": 500,
+            "rate": 0.6241984410040715
+        },
+        "probe_revision_coverage{revision_index:1}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "post_ramp_warmup_latency_ms": {
+            "count": 1000,
+            "avg": 74.083,
+            "min": 20,
+            "med": 75,
+            "max": 124,
+            "p(90)": 111,
+            "p(95)": 116,
+            "p(99)": 120
+        },
+        "probe_patch_received": {
+            "count": 5000,
+            "rate": 6.241984410040716
+        },
+        "unexpected_close": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_revision_coverage{revision_index:8}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "revision_sequence_error": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "patch_received": {
+            "count": 6000,
+            "rate": 7.490381292048859
+        },
+        "probe_sync_latency_without_spikes_ms": {
+            "med": 62,
+            "max": 100,
+            "p(90)": 92,
+            "p(95)": 96,
+            "p(99)": 100,
+            "count": 4317,
+            "avg": 60.67824878387769,
+            "min": 14
+        },
+        "ws_msgs_sent": {
+            "rate": 29.243696961040754,
+            "count": 23425
+        },
+        "probe_sync_over_100ms": {
+            "fails": 4317,
+            "passes": 683,
+            "value": 0.1366
+        },
+        "probe_sync_latency_ms{revision_index:7}": {
+            "min": 17,
+            "med": 74,
+            "max": 116,
+            "p(90)": 107,
+            "p(95)": 110,
+            "p(99)": 114.00999999999999,
+            "count": 500,
+            "avg": 71.39,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "application_pong_latency_ms": {
+            "p(90)": 1,
+            "p(95)": 1,
+            "p(99)": 2,
+            "count": 22425,
+            "avg": 0.9436343366778149,
+            "min": 0,
+            "med": 1,
+            "max": 125
+        },
+        "ws_connecting": {
+            "p(95)": 24.494957799999995,
+            "p(99)": 35.49652508999999,
+            "count": 500,
+            "avg": 9.962383201999986,
+            "min": 2.235007,
+            "med": 7.2905845,
+            "max": 48.18661,
+            "p(90)": 20.8516875
+        },
+        "clock_skew_detected": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_revision_coverage{revision_index:5}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "data_sent": {
+            "rate": 1291.6538339697254,
+            "count": 1034650
+        },
+        "ping_sent": {
+            "count": 22425,
+            "rate": 27.99530007903261
+        },
+        "probe_sync_over_100ms{revision_index:5}": {
+            "passes": 112,
+            "fails": 388,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.224
+        },
+        "probe_sync_latency_ms{revision_index:4}": {
+            "p(99)": 86,
+            "count": 500,
+            "avg": 53.542,
+            "min": 15,
+            "med": 54,
+            "max": 87,
+            "p(90)": 81,
+            "p(95)": 83,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_sync_latency_ms": {
+            "p(99)": 235.01000000000022,
+            "count": 5000,
+            "avg": 70.2664,
+            "min": 14,
+            "med": 68,
+            "max": 251,
+            "p(90)": 104,
+            "p(95)": 114.05000000000018,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_sync_over_100ms{revision_index:1}": {
+            "fails": 371,
+            "passes": 129,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.258
+        },
+        "connection_survived": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "initial_probe_value_success": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_sync_over_100ms{revision_index:9}": {
+            "passes": 0,
+            "fails": 500,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0
+        },
+        "initial_sync_timeout": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_sync_latency_ms{revision_index:3}": {
+            "p(90)": 106,
+            "p(95)": 108,
+            "p(99)": 109,
+            "count": 500,
+            "avg": 75.544,
+            "min": 16,
+            "med": 80,
+            "max": 110,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "initial_sync_latency_ms": {
+            "count": 500,
+            "avg": 21.42,
+            "min": 8,
+            "med": 19,
+            "max": 114,
+            "p(90)": 34,
+            "p(95)": 39,
+            "p(99)": 53.02999999999997,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "probe_sync_latency_ms{revision_index:8}": {
+            "count": 500,
+            "avg": 94.796,
+            "min": 16,
+            "med": 63,
+            "max": 251,
+            "p(90)": 235.10000000000002,
+            "p(95)": 247,
+            "p(99)": 250,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "connection_open_latency_ms": {
+            "max": 49,
+            "p(90)": 21,
+            "p(95)": 25,
+            "p(99)": 36.00999999999999,
+            "count": 500,
+            "avg": 10.28,
+            "min": 2,
+            "med": 8
+        },
+        "probe_sync_over_100ms{revision_index:2}": {
+            "passes": 0,
+            "fails": 500,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0
+        }
+    },
+    "setup_data": {
+        "autoController": false
+    }
+}

@@ -1,0 +1,723 @@
+{
+    "metrics": {
+        "probe_updated_at_to_sdk_latency_ms{revision_index:6}": {
+            "min": 12,
+            "med": 60,
+            "max": 100,
+            "p(90)": 92,
+            "p(95)": 95,
+            "p(99)": 98.00999999999999,
+            "count": 500,
+            "avg": 58.992,
+            "thresholds": {
+                "p(99)<1000": false,
+                "p(95)<500": false
+            }
+        },
+        "invalid_message": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "initial_probe_value_success": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "iterations": {
+            "count": 501,
+            "rate": 0.6028108548444847
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:5}": {
+            "passes": 103,
+            "fails": 397,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.206
+        },
+        "controller_warmup_updates": {
+            "count": 2,
+            "rate": 0.002406430558261416
+        },
+        "data_received": {
+            "count": 29944947,
+            "rate": 36030.21776315926
+        },
+        "connection_opened": {
+            "count": 500,
+            "rate": 0.601607639565354,
+            "thresholds": {
+                "count>=500": false,
+                "count<=500": false
+            }
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:1}": {
+            "passes": 0,
+            "fails": 500,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0
+        },
+        "websocket_error": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "connection_open_latency_ms": {
+            "p(90)": 23,
+            "p(95)": 27.049999999999955,
+            "p(99)": 43.00999999999999,
+            "count": 500,
+            "avg": 10.934,
+            "min": 2,
+            "med": 9,
+            "max": 61
+        },
+        "unexpected_revision": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_updated_at_to_sdk_latency_ms{revision_index:5}": {
+            "avg": 79.57,
+            "min": 23,
+            "med": 82,
+            "max": 117,
+            "p(90)": 109,
+            "p(95)": 111,
+            "p(99)": 114,
+            "count": 500,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_revision_coverage{revision_index:3}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "initial_sync_success": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_revision_coverage{revision_index:6}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_updated_at_to_sdk_latency_ms{revision_index:1}": {
+            "avg": 50.624,
+            "min": 12,
+            "med": 52,
+            "max": 84,
+            "p(90)": 76.10000000000002,
+            "p(95)": 80,
+            "p(99)": 83,
+            "count": 500,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "post_ramp_warmup_latency_ms": {
+            "p(95)": 109.04999999999995,
+            "p(99)": 120,
+            "count": 1000,
+            "avg": 61.407,
+            "min": 9,
+            "med": 59,
+            "max": 122,
+            "p(90)": 100.10000000000002
+        },
+        "probe_revision_coverage{revision_index:4}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "pong_received": {
+            "count": 22425,
+            "rate": 26.982102634506127
+        },
+        "probe_updated_at_to_sdk_over_100ms": {
+            "passes": 669,
+            "fails": 4331,
+            "value": 0.1338
+        },
+        "vus_max": {
+            "value": 501,
+            "min": 501,
+            "max": 501
+        },
+        "probe_updated_at_to_sdk_over_80ms": {
+            "fails": 3279,
+            "passes": 1721,
+            "value": 0.3442
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 48,
+            "value": 0
+        },
+        "unexpected_close": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_updated_at_to_sdk_latency_ms{revision_index:3}": {
+            "count": 500,
+            "avg": 58.072,
+            "min": 12,
+            "med": 61,
+            "max": 102,
+            "p(90)": 89,
+            "p(95)": 93,
+            "p(99)": 96,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:10}": {
+            "fails": 500,
+            "passes": 0,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0
+        },
+        "http_req_receiving": {
+            "p(90)": 0.10907190000000004,
+            "p(95)": 0.2479800499999999,
+            "p(99)": 4.75316652000001,
+            "count": 48,
+            "avg": 0.2560164791666667,
+            "min": 0.034136,
+            "med": 0.06417600000000001,
+            "max": 8.644007
+        },
+        "probe_revision_received": {
+            "count": 5000,
+            "rate": 6.01607639565354
+        },
+        "controller_post_ramp_warmup_updates": {
+            "count": 2,
+            "rate": 0.002406430558261416
+        },
+        "probe_updated_at_to_sdk_latency_without_spikes_ms": {
+            "count": 4331,
+            "avg": 58.98499191872547,
+            "min": 10,
+            "med": 61,
+            "max": 100,
+            "p(90)": 92,
+            "p(95)": 96,
+            "p(99)": 99
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:3}": {
+            "passes": 1,
+            "fails": 499,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.002
+        },
+        "ready_before_hold": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "ping_sent": {
+            "count": 22425,
+            "rate": 26.982102634506127
+        },
+        "revision_sequence_error": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:7}": {
+            "passes": 0,
+            "fails": 500,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0
+        },
+        "controller_revision_updates": {
+            "count": 10,
+            "rate": 0.01203215279130708
+        },
+        "heartbeat_timeout": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "ws_connecting": {
+            "p(95)": 27.06286214999999,
+            "p(99)": 42.212836909999986,
+            "count": 500,
+            "avg": 10.639617740000002,
+            "min": 1.957075,
+            "med": 8.296481499999999,
+            "max": 61.139643,
+            "p(90)": 22.607017200000005
+        },
+        "ws_sessions": {
+            "count": 500,
+            "rate": 0.601607639565354
+        },
+        "http_req_blocked": {
+            "count": 48,
+            "avg": 1.1738519166666668,
+            "min": 0.002756,
+            "med": 0.0051990000000000005,
+            "max": 30.807228,
+            "p(90)": 0.008470400000000003,
+            "p(95)": 2.394430449999995,
+            "p(99)": 26.49030056000001
+        },
+        "probe_updated_at_to_sdk_latency_ms{revision_index:7}": {
+            "p(95)": 96,
+            "p(99)": 97.00999999999999,
+            "count": 500,
+            "avg": 66,
+            "min": 12,
+            "med": 73.5,
+            "max": 98,
+            "p(90)": 94,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:4}": {
+            "fails": 322,
+            "passes": 178,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.356
+        },
+        "final_applied_revision_success": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "patch_received": {
+            "count": 6000,
+            "rate": 7.219291674784248
+        },
+        "clock_skew_detected": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "controller_update_success": {
+            "passes": 18,
+            "fails": 0,
+            "value": 1
+        },
+        "http_req_waiting": {
+            "avg": 12.377670312500001,
+            "min": 2.516751,
+            "med": 10.212635,
+            "max": 67.034514,
+            "p(90)": 21.24250940000001,
+            "p(95)": 23.46322635,
+            "p(99)": 48.39659726000004,
+            "count": 48
+        },
+        "probe_updated_at_to_sdk_latency_ms{revision_index:4}": {
+            "p(95)": 121,
+            "p(99)": 123,
+            "count": 500,
+            "avg": 76.916,
+            "min": 10,
+            "med": 81.5,
+            "max": 124,
+            "p(90)": 118,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "connection_survived": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "http_req_connecting": {
+            "p(90)": 0,
+            "p(95)": 1.6213983499999964,
+            "p(99)": 4.627155680000002,
+            "count": 48,
+            "avg": 0.2423487291666667,
+            "min": 0,
+            "med": 0,
+            "max": 5.536068
+        },
+        "ws_msgs_received": {
+            "count": 28925,
+            "rate": 34.80300194885573
+        },
+        "probe_revision_coverage{revision_index:2}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "full_sync_received": {
+            "count": 500,
+            "rate": 0.601607639565354
+        },
+        "probe_revision_coverage{revision_index:8}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_revision_coverage{revision_index:1}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "initial_sync_timeout": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "probe_revision_coverage{revision_index:9}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "ws_session_duration": {
+            "count": 500,
+            "avg": 680100.8069874133,
+            "min": 630200.443064,
+            "med": 680102.498592,
+            "max": 729996.974322,
+            "p(90)": 720024.328263,
+            "p(95)": 725011.2290733,
+            "p(99)": 728998.74994413
+        },
+        "initial_sync_latency_ms": {
+            "min": 7,
+            "med": 18,
+            "max": 86,
+            "p(90)": 37,
+            "p(95)": 46,
+            "p(99)": 67.00999999999999,
+            "count": 500,
+            "avg": 21.8,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "application_pong_latency_ms": {
+            "max": 89,
+            "p(90)": 1,
+            "p(95)": 1,
+            "p(99)": 3,
+            "count": 22425,
+            "avg": 0.8914604236343366,
+            "min": 0,
+            "med": 1
+        },
+        "http_reqs": {
+            "count": 48,
+            "rate": 0.05775433339827398
+        },
+        "data_sent": {
+            "count": 1054920,
+            "rate": 1269.2958622605665
+        },
+        "probe_revision_coverage{revision_index:10}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "http_req_sending": {
+            "p(90)": 0.03915630000000001,
+            "p(95)": 0.047009499999999996,
+            "p(99)": 0.055015080000000015,
+            "count": 48,
+            "avg": 0.0254419375,
+            "min": 0.011221,
+            "med": 0.022226500000000003,
+            "max": 0.060296
+        },
+        "controller_api_latency_ms": {
+            "p(95)": 23.5714772,
+            "p(99)": 48.578785420000045,
+            "count": 48,
+            "avg": 12.659128729166662,
+            "min": 2.572971,
+            "med": 10.296770500000001,
+            "max": 67.319948,
+            "p(90)": 23.2687905
+        },
+        "probe_updated_at_to_sdk_latency_ms{revision_index:10}": {
+            "min": 13,
+            "med": 60,
+            "max": 98,
+            "p(90)": 91,
+            "p(95)": 94,
+            "p(99)": 98,
+            "count": 500,
+            "avg": 58.464,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_updated_at_to_sdk_latency_ms{revision_index:8}": {
+            "avg": 50.606,
+            "min": 12,
+            "med": 52,
+            "max": 89,
+            "p(90)": 78,
+            "p(95)": 82,
+            "p(99)": 87.01999999999998,
+            "count": 500,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "http_req_duration": {
+            "max": 67.319948,
+            "p(90)": 23.2687905,
+            "p(95)": 23.5714772,
+            "p(99)": 48.578785420000045,
+            "count": 48,
+            "avg": 12.659128729166662,
+            "min": 2.572971,
+            "med": 10.296770500000001
+        },
+        "probe_revision_coverage{revision_index:5}": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:9}": {
+            "passes": 343,
+            "fails": 157,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.686
+        },
+        "probe_updated_at_to_sdk_latency_ms{revision_index:2}": {
+            "p(90)": 100,
+            "p(95)": 102,
+            "p(99)": 103.00999999999999,
+            "count": 500,
+            "avg": 66.572,
+            "min": 11,
+            "med": 71,
+            "max": 104,
+            "thresholds": {
+                "p(99)<1000": false,
+                "p(95)<500": false
+            }
+        },
+        "probe_patch_received": {
+            "count": 5000,
+            "rate": 6.01607639565354
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:8}": {
+            "passes": 0,
+            "fails": 500,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0
+        },
+        "iteration_duration": {
+            "med": 691001.521062,
+            "max": 740998.248381,
+            "p(90)": 731001.272896,
+            "p(95)": 735994.967767,
+            "p(99)": 739997.736306,
+            "count": 501,
+            "avg": 690268.5330983928,
+            "min": 274497.023511
+        },
+        "post_ramp_warmup_patch_received": {
+            "rate": 1.203215279130708,
+            "count": 1000
+        },
+        "http_req_tls_handshaking": {
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "count": 48,
+            "avg": 0,
+            "min": 0,
+            "med": 0
+        },
+        "vus": {
+            "value": 0,
+            "min": 0,
+            "max": 501
+        },
+        "post_ramp_warmup_coverage": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_revision_coverage{revision_index:7}": {
+            "fails": 0,
+            "passes": 500,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "connection_open_success": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate==1": false
+            },
+            "value": 1
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:6}": {
+            "passes": 0,
+            "fails": 500,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0
+        },
+        "probe_updated_at_to_sdk_latency_ms": {
+            "p(90)": 108,
+            "p(95)": 129,
+            "p(99)": 169,
+            "count": 5000,
+            "avg": 68.105,
+            "min": 10,
+            "med": 66,
+            "max": 181,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_revision_coverage": {
+            "passes": 5000,
+            "fails": 0,
+            "value": 1
+        },
+        "ws_msgs_sent": {
+            "count": 23425,
+            "rate": 28.185317913636833
+        },
+        "probe_updated_at_to_sdk_latency_ms{revision_index:9}": {
+            "p(95)": 175.04999999999995,
+            "p(99)": 180,
+            "count": 500,
+            "avg": 115.234,
+            "min": 15,
+            "med": 129,
+            "max": 181,
+            "p(90)": 169,
+            "thresholds": {
+                "p(95)<500": false,
+                "p(99)<1000": false
+            }
+        },
+        "probe_updated_at_to_sdk_over_100ms{revision_index:2}": {
+            "passes": 44,
+            "fails": 456,
+            "thresholds": {
+                "rate<=1": false
+            },
+            "value": 0.088
+        },
+        "probe_updated_at_to_sdk_over_60ms": {
+            "passes": 2855,
+            "fails": 2145,
+            "value": 0.571
+        },
+        "controller_api_error": {
+            "count": 0,
+            "rate": 0
+        }
+    },
+    "setup_data": {
+        "autoController": true
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {}
+    }
+}
