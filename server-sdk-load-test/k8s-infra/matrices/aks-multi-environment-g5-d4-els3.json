@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "matrixId": "aks-multi-environment-g5-d4-els3",
+  "experimentId": "sdk-menv-g5-v1",
+  "description": "10,000 total Server SDK WebSockets across 100 environments in one project; 100 connections per environment and a 100-connection target environment for Three-stage propagation.",
+  "kubernetesContext": "aks-featbit-load-testing",
+  "projectKey": "load-testing",
+  "environmentPrefix": "sdk-menv-g5-v1-env-",
+  "environmentNamePrefix": "SDK multi-env G5 v1 ",
+  "environmentDescription": "Owned by featbit-load-testing experiment sdk-menv-g5-v1; do not use for other tests.",
+  "environmentCount": 100,
+  "targetEnvironmentIndex": 1,
+  "flagPrefix": "sdk-menv-g5-v1-flag-",
+  "flagNamePrefix": "SDK multi-env G5 v1 flag ",
+  "flagDescription": "Owned by featbit-load-testing experiment sdk-menv-g5-v1; canonical string propagation probe.",
+  "flagCountPerEnvironment": 20,
+  "measuredFlagIndex": 1,
+  "postRampWarmupFlagIndex": 2,
+  "expectedRevisions": [
+    "rev-001",
+    "rev-002",
+    "rev-003",
+    "rev-004",
+    "rev-005",
+    "rev-006",
+    "rev-007",
+    "rev-008",
+    "rev-009",
+    "rev-010"
+  ],
+  "parallelism": 20,
+  "connectionsPerRunner": 500,
+  "connectionsPerEnvironmentPerRunner": 5,
+  "connectionsPerEnvironment": 100,
+  "totalConnections": 10000,
+  "connectionsPerSecond": 100,
+  "rampDurationSeconds": 100,
+  "stabilizationSeconds": 30,
+  "holdDurationSeconds": 600,
+  "revisionIntervalSeconds": 30,
+  "warmupCoverageTimeoutSeconds": 30,
+  "readyCoverageTimeoutSeconds": 180,
+  "finalSettleSeconds": 30,
+  "streamingUrl": "ws://featbit-els.featbit.svc.cluster.local:5100",
+  "configurationApiUrl": "http://featbit-api.featbit.svc.cluster.local:5000",
+  "parallelRuns": false,
+  "runs": {
+    "validation": 1,
+    "formal": 3
+  },
+  "fixedInfrastructure": {
+    "featbitNodes": 3,
+    "featbitNodeVmSize": "Standard_D4ds_v5",
+    "loadgenNodes": 10,
+    "loadgenNodeVmSize": "Standard_D4ds_v5",
+    "elsReplicas": 3,
+    "elsResources": {
+      "cpuRequest": "500m",
+      "cpuLimit": "1",
+      "memoryRequest": "256Mi",
+      "memoryLimit": "512Mi"
+    },
+    "runnerResources": {
+      "cpuRequest": "1",
+      "cpuLimit": null,
+      "memoryRequest": "2Gi",
+      "memoryLimit": "6Gi"
+    }
+  },
+  "kubernetesObjects": {
+    "configMap": "featbit-k6-menv-g5-v1-config",
+    "secret": "featbit-k6-menv-g5-v1-secret"
+  }
+}

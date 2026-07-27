@@ -13,16 +13,38 @@ in the AKS and Docker Desktop runbooks are relative to that directory.
 [>100 ms jitter is attributed to k6](#jitter-and-tail-latency-above-100-ms-are-attributed-to-the-k6-measurement-path-not-featbit-els) ·
 [Historical records](#historical-experiment-record) ·
 [Five-group reference](#1-five-group-reference-matrix) ·
+[Multi-environment baseline](#6-multi-environment-g5-baseline) ·
 [Latest three-stage summary](docs/reports/aks-10k-three-stage-g5-d4.html) ·
 [Latest k6 report](docs/reports/aks-10k-three-stage-g5-d4-runner-17.html) ·
 [AKS runbook](k8s-infra/README-AKS.md)
 
 ## Verified 10,000-connection result
 
-All rows below used 10,000 Server SDK WebSockets, a 100 connections/s ramp,
-20 provisioned flags, one unmeasured post-ramp warm-up flag, one measured
-flag, 10 revisions at 30-second intervals, and the internal Kubernetes
-streaming Service. No FeatBit source code or image was changed.
+All experiments below used 10,000 Server SDK WebSockets, a 100 connections/s
+ramp, one unmeasured post-ramp warm-up flag, one measured flag, 10 revisions
+at 30-second intervals, and the internal Kubernetes streaming Service. No
+FeatBit source code or image was changed.
+
+### Typical multi-environment scenario
+
+**Primary verified baseline:** 10,000 connections span many
+Project/Environment scopes, and a flag revision reaches only one Environment's
+100 connections.
+
+| Result | ELS Pods: count; CPU; memory | Runner Pods: count; CPU; memory | Revision delivery | PUT start → target SDK: avg / p95 / p99 / max | Connection health and isolation |
+| --- | --- | --- | --- | ---: | --- |
+| **3/3 formal runs passed** | **3 × (500m→1 CPU; 256→512Mi)** | **20 × (1 CPU request, no limit; 2→6Gi)** | **All 100 target connections received all 10 revisions** | **15.77–18.26 / 20–30 / 22–33 / 24–36 ms** | **All 10,000 connections healthy; 0 cross-environment deliveries** |
+
+The end-to-end metric includes the control-plane write, Redis publication, and
+streaming delivery. These are measurements from executed AKS flag updates and
+SDK deliveries, not extrapolated values or production telemetry.
+Resource figures are per Pod; `request → limit` is shown where a limit exists.
+[Detailed results and data](#6-multi-environment-g5-baseline).
+
+### Full 10,000-connection revision fan-out
+
+Full-fan-out stress scenario: all 10,000 SDK connections share the changed
+Environment and receive every measured revision.
 
 The Five-group rows select the lowest worst-cohort p99 from three repetitions;
 the two Three-stage rows are single formal runs. Complete p95/p99 values are
@@ -50,6 +72,30 @@ secondary description of the usual path, not an SLO and not the complete
 distribution. The Three-stage runs did not retain a fixed-cutoff submetric at
 the canonical Redis-observer boundary, so inventing post-hoc filtered values
 would be misleading.
+
+### Connection ramp health
+
+All 11 represented runs completed the `0 → 10,000` WebSocket ramp in 100 seconds
+(~100/s). Every run opened, synchronized, warmed, and retained all 10,000
+connections with zero connection or protocol faults.
+
+| Experiment | Worst-runner p95: open / initial sync | Ramp result |
+| --- | ---: | --- |
+| **Typical multi-environment validation** | **29 / 41.05 ms** | **10,000 healthy; 0 faults** |
+| **Typical multi-environment formal (3/3 run range)** | **22.05–34 / 37–51 ms** | **10,000 healthy in every run; 0 faults** |
+| Five-group g1 | 28 / 37.05 ms | 10,000 healthy; 0 faults |
+| Five-group g2 | 31.65 / 41.55 ms | 10,000 healthy; 0 faults |
+| Five-group g3 | 27 / 36 ms | 10,000 healthy; 0 faults |
+| Five-group g4 | 25.55 / 37.55 ms | 10,000 healthy; 0 faults |
+| Five-group g5 | 36 / 52 ms | 10,000 healthy; 0 faults |
+| Three-stage original | 39 / 53.05 ms | 10,000 healthy; 0 faults |
+| Three-stage G5 replay | 31 / 42 ms | 10,000 healthy; 0 faults |
+
+`~100/s` is the configured linear target, not a retained per-second time
+series. The multi-environment formal row is the min–max range of the
+worst-runner p95 from each of its three runs; its per-run evidence is retained
+in [section 6](#6-multi-environment-g5-baseline). The seven full-fan-out rows
+are also available as [machine-readable data](docs/reports/aks-10k-ramp-health.json).
 
 ### Scaling conclusion
 
@@ -88,6 +134,8 @@ Redis, PostgreSQL, or ELS CPU/memory capacity as the primary bottleneck.
   [latest G5 replay](docs/reports/aks-10k-three-stage-g5-d4.json),
   [original matrix](k8s-infra/matrices/aks-stage-latency-validation.json),
   and [G5 replay matrix](k8s-infra/matrices/aks-three-stage-g5-d4-els3.json).
+- Ramp health:
+  [machine-readable selected-run rollup](docs/reports/aks-10k-ramp-health.json).
 - Commands and operational checks remain in the
   [AKS runbook](k8s-infra/README-AKS.md).
 
@@ -629,6 +677,98 @@ See the
 [exact matrix](k8s-infra/matrices/aks-els-loadgen-sentinel.json), and
 [AKS sentinel runbook](k8s-infra/README-AKS.md#112-els--loadgen-sentinel-判别实验).
 
+### 6. Multi-environment G5 baseline
+
+**Historical status:** latest completed campaign; one validation run and three
+formal runs passed. No FeatBit source code, image, or AKS resource was changed.
+
+This campaign modeled the typical Project/Environment fan-out shape with one
+Project containing 100 Environments. Each Environment had 20 flags and 100
+SDK connections; only one target Environment received the measured revisions.
+
+#### Test contract
+
+| Item | Value |
+| --- | --- |
+| Total load | 10,000 Server SDK WebSockets; 0 → 10,000 at 100 connections/s |
+| Environments and flags | 100 Environments; 20 flags per Environment |
+| Connection distribution | 100 connections per Environment; 20 runners × 500 connections; 5 connections per Environment per runner |
+| Target fan-out | One Environment; 100 target connections |
+| Warm-up | `flag-02` update and restore; both patches delivered to all 100 target connections |
+| Measurement | `flag-01`; 10 revisions at 30-second intervals |
+| Formal samples | 100 target connections × 10 revisions = 1,000 deliveries per formal run |
+| Fixed G5 nodes | 3 × D4 FeatBit nodes; 10 × D4 loadgen nodes |
+| ELS Pods | 3; each requests 500m CPU / 256Mi memory and is limited to 1 CPU / 512Mi memory |
+| Runner Pods | 20; each requests 1 CPU / 2Gi memory, has no CPU limit, and is limited to 6Gi memory |
+
+#### Connection, delivery, and isolation gates
+
+| Run ID | Kind | Connection lifecycle | Warm-up | Measured revisions | Cross-environment | Result |
+| --- | --- | --- | --- | --- | ---: | --- |
+| `growth-menv-validation-20260727105024-ae93` | Validation | All 10,000 opened, synchronized, became ready, and survived | 100/100 connections received both patches | 100/100 connections received all 10 revisions | 0 | PASS |
+| `growth-menv-formal-20260727111708-c15d` | Formal 1 | All 10,000 opened, synchronized, became ready, and survived | 100/100 connections received both patches | 100/100 connections received all 10 revisions | 0 | PASS |
+| `growth-menv-formal-20260727114220-6ef1` | Formal 2 | All 10,000 opened, synchronized, became ready, and survived | 100/100 connections received both patches | 100/100 connections received all 10 revisions | 0 | PASS |
+| `growth-menv-formal-20260727120739-1058` | Formal 3 | All 10,000 opened, synchronized, became ready, and survived | 100/100 connections received both patches | 100/100 connections received all 10 revisions | 0 | PASS |
+
+Worst-runner ramp p95 values from the 20 retained k6 summaries in each run:
+
+| Run | Connection open p95 | Initial full-sync p95 |
+| --- | ---: | ---: |
+| Validation | 29 ms | 41.05 ms |
+| Formal 1 | 22.05 ms | 37 ms |
+| Formal 2 | 27.05 ms | 41 ms |
+| Formal 3 | 34 ms | 51 ms |
+
+#### Three-stage latency
+
+Each cell is `avg / p50 / p90 / p95 / p99 / max` in milliseconds.
+
+| Run | PUT start → target SDK | PUT start → earliest Redis observer | Earliest Redis observer → target SDK |
+| --- | ---: | ---: | ---: |
+| Validation | 16.74 / 15 / 21 / 23.05 / 40.01 / 45 | 14.50 / 14 / 15.40 / 17.20 / 18.64 / 19 | 2.24 / 1 / 6.10 / 8.05 / 26.01 / 31 |
+| Formal 1 | 15.77 / 15 / 19 / 20 / 22 / 24 | 14.30 / 14 / 15.10 / 15.55 / 15.91 / 16 | 1.47 / 1 / 5 / 6 / 7 / 10 |
+| Formal 2 | 18.26 / 17 / 26 / 30 / 33 / 35 | 16.60 / 15.50 / 20.70 / 23.85 / 26.37 / 27 | 1.66 / 1 / 4 / 5 / 7 / 9 |
+| Formal 3 | 17.48 / 16 / 25.10 / 28 / 32.02 / 36 | 15.90 / 14.50 / 18 / 22.50 / 26.10 / 27 | 1.58 / 1 / 5 / 6 / 8 / 9 |
+
+`end_to_end_latency_ms` is the first data column and includes both stages:
+
+`end_to_end_latency_ms = control_plane_write_latency_ms + probe_sync_latency_ms`
+
+Each run has 1,000 end-to-end and streaming samples but only 10 control-plane
+writes. Each revision has 100 target samples, and each runner contributes only
+5, so per-revision p99 is dominated by roughly the two slowest observations
+and runner percentiles are diagnostic only. All 3,000 formal streaming samples
+were at or below 100 ms; the complete and De-jittered views are therefore
+identical.
+
+The Redis boundary is the earliest observation among 10 loadgen subscribers.
+It can slightly understate the post-publication slice, but not the end-to-end
+measurement. The result is not a faster/slower comparison with the earlier
+single-environment campaigns: their revisions reached all 10,000 connections,
+and their headline percentiles used the worst runner × revision cohort.
+
+#### Resource evidence
+
+The ranges below are aggregate five-second peaks from the three formal runs:
+
+| Scope | CPU peak range | Memory peak range |
+| --- | ---: | ---: |
+| ELS Pods | 286.33–356.23m | 549.39–584.40 MiB |
+| Runners | 1826.86–6361.12m | 19244.70–19298.61 MiB |
+| FeatBit nodes | 1354.26–1407.03m | 5880.43–5929.73 MiB |
+| Loadgen nodes | 4990.91–5148.66m | 41934.14–42470.85 MiB |
+
+Across the formal runs, one-second loadgen CPU p99 was 28.99–31.08%, loadgen
+CPU-pressure p99 was 13.92–14.18%, and run-queue p99 was 6. FeatBit-node CPU
+p99 was 16.83–17.25%. Packet drops were zero. ELS cgroup CPU p99 was
+122.77–164.38m; full-run throttling was 2–4 periods out of approximately
+22,600, totaling 12.50–207.89 ms.
+
+Artifacts:
+[complete report](docs/reports/aks-10k-multi-environment-g5-d4-els3.md),
+[machine-readable result and embedded evidence](docs/reports/aks-10k-multi-environment-g5-d4-els3.json),
+and [exact matrix](k8s-infra/matrices/aks-multi-environment-g5-d4-els3.json).
+
 ## Test profiles
 
 `Ramp rate` means new WebSocket connections per second.
@@ -641,9 +781,12 @@ See the
 | Growth | AKS only | 100/s | 10,000 | 20 | 1 |
 | Growth Plus | AKS only | 200/s | 20,000 | 20 | 1 |
 
-The 10,000-connection investigations retain a 100/s ramp, 20 provisioned
-flags, flag-02 as the unmeasured full-connection warm-up, flag-01 as the only
-changed and measured flag, and 10 formal revisions per run.
+The single-environment 10,000-connection investigations retain a 100/s ramp,
+20 provisioned flags, flag-02 as the unmeasured full-connection warm-up,
+flag-01 as the only changed and measured flag, and 10 formal revisions per
+run. The multi-environment baseline in section 6 provisions 20 flags in each
+of 100 Environments but changes only the target Environment's flag-01 and
+flag-02.
 
 [Back to top](#featbit-server-sdk-websocket-load-testing)
 

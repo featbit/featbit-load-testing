@@ -301,7 +301,8 @@ foreach ($artifact in $sortedArtifacts) {
                         -n $namespace `
                         cp `
                         "results-reader:$remotePath" `
-                        ".\$temporaryName"
+                        ".\$temporaryName" |
+                        Out-Host
                     $exitCode = $LASTEXITCODE
                 }
                 finally {
@@ -468,6 +469,29 @@ if ($nodeEvidenceNames.Count -gt 0) {
         }
 
         if ($copyRequired) {
+            $stagedLocalPath = Join-Path `
+                $repositoryRoot `
+                "results\$evidenceName"
+            if (Test-Path -LiteralPath $stagedLocalPath -PathType Leaf) {
+                $stagedHash = (
+                    Get-FileHash `
+                        -LiteralPath $stagedLocalPath `
+                        -Algorithm SHA256
+                ).Hash.ToLowerInvariant()
+                if ($stagedHash -ne $remoteHash) {
+                    throw (
+                        "Locally staged node evidence '$stagedLocalPath' " +
+                        "does not match the published PVC hash."
+                    )
+                }
+                Copy-Item `
+                    -LiteralPath $stagedLocalPath `
+                    -Destination $localPath
+                $copyRequired = $false
+            }
+        }
+
+        if ($copyRequired) {
             $temporaryPath = "$localPath.partial-$([Guid]::NewGuid().ToString('N'))"
             try {
                 $temporaryName = Split-Path -Leaf $temporaryPath
@@ -484,7 +508,8 @@ if ($nodeEvidenceNames.Count -gt 0) {
                             -n $namespace `
                             cp `
                             "results-reader:$remotePath" `
-                            ".\$temporaryName"
+                            ".\$temporaryName" |
+                            Out-Host
                         $exitCode = $LASTEXITCODE
                     }
                     finally {
@@ -548,6 +573,15 @@ foreach ($sourceSuffix in @(
     "els-deployment.json",
     "els-pods.json",
     "runner-placement.json",
+    "multi-environment-inventory.json",
+    "external-controller-events.jsonl",
+    "experiment-events.jsonl",
+    "cross-environment-monitor.log",
+    "cross-environment-monitor-error.log",
+    "runner-image-preflight.log",
+    "orchestration.log",
+    "orchestration-error.log",
+    "restore.log",
     "stream-timing-events.jsonl",
     "stream-timing-pods.json",
     "stream-timing-raw.log",

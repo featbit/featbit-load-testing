@@ -1368,6 +1368,58 @@ $matrix = ".\k8s-infra\matrices\aks-10k-d2-els-node-isolation-1s.json"
 [`aks-10k-d2-node-isolation-1s` 报告](../docs/reports/aks-10k-d2-node-isolation-1s.md)
 必须与当前 campaign 分开保存。
 
+### 11.6 多环境 10k / target fan-out 100 基线
+
+这个实验不修改 FeatBit、ELS、Helm 或节点池。固定拓扑为 100 个
+environments × 20 flags × 100 connections，20 runners 各自对每个
+environment 建立 5 条连接；只有 target environment 的 100 条连接接收
+`flag-01` 的十次正式 revision。精确定义见
+`matrices/aks-multi-environment-g5-d4-els3.json`。
+
+controller access token 必须预先存在于
+`featbit-loadtest/featbit-k6-controller-secret`；100 个 Server SDK secrets
+只写入 `featbit-loadtest/featbit-k6-menv-g5-v1-secret`。脚本不会把它们写入
+ConfigMap、inventory、日志或报告。先把 API 仅转发到本机，再幂等准备或核验
+环境和 flags：
+
+```powershell
+kubectl --context aks-featbit-load-testing `
+  -n featbit port-forward service/featbit-api 15000:5000
+
+.\k8s-infra\scripts\prepare-multi-environment-resources.ps1 `
+  -KubeContext aks-featbit-load-testing `
+  -ApiUrl http://127.0.0.1:15000
+```
+
+准备脚本只复用完全符合矩阵的同前缀资源；发现错配、归档 flag、额外同前缀
+flag 或归属标签不符时会报错，不会删除或覆盖资源。用 digest-pinned runner
+image 先 render/server dry-run：
+
+```powershell
+$runnerImage = "<registry>/<repository>@sha256:<digest>"
+
+.\k8s-infra\scripts\render-aks-multi-environment-testrun.ps1 `
+  -RunKind validation `
+  -KubeContext aks-featbit-load-testing `
+  -RunnerImage $runnerImage
+```
+
+确认 render 输出为 20 × 500 = 10,000、100 environments、每
+environment/runner 5 条连接后，执行完整批次：
+
+```powershell
+.\k8s-infra\scripts\run-aks-multi-environment-batch.ps1 `
+  -KubeContext aks-featbit-load-testing `
+  -RunnerImage $runnerImage
+```
+
+批处理先运行一次 validation；只有全部 gate 通过才依次运行三次 formal。
+任一轮失败时停止后续轮，并保留 TestRun、runner 输出、controller/observer
+日志和节点证据。每轮结束都会恢复 target flag baseline，但不会删除 TestRun、
+Job、Secret、ConfigMap、PVC 或 AKS 资源。最终报告由
+`summarize-aks-multi-environment-runs.ps1` 生成；正式基线报告见
+`docs/reports/aks-10k-multi-environment-g5-d4-els3.md` 和同名 JSON。
+
 ## 12. 如何判断传播延迟瓶颈
 
 `p95/p99` 超标本身不能证明服务器处理能力不足。按同一时间窗对齐以下证据：

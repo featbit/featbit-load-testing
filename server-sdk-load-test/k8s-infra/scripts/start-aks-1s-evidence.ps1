@@ -18,7 +18,9 @@ param(
     [int] $ExpectedFeatBitNodes = 6,
 
     [ValidateRange(1, 100)]
-    [int] $ExpectedLoadgenNodes = 10
+    [int] $ExpectedLoadgenNodes = 10,
+
+    [switch] $PreserveOnFailure
 )
 
 $ErrorActionPreference = "Stop"
@@ -431,7 +433,7 @@ try {
     }
 }
 finally {
-    if ($cleanupRequired) {
+    if ($cleanupRequired -and -not $PreserveOnFailure) {
         & kubectl --context $targetContext `
             -n $script:LoadTestNamespace `
             delete daemonset featbit-1s-evidence `

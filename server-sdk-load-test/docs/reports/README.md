@@ -2,6 +2,28 @@
 
 These files preserve the public evidence selected for the repository README.
 
+## Multi-environment G5 baseline
+
+This baseline keeps the existing 10,000-connection AKS topology but distributes
+connections across 100 environments. Only one target environment receives the
+ten measured revisions, so each revision has 100 target samples. The validation
+run and all three formal runs passed connection health, warm-up, formal
+coverage, Redis-observer, isolation, fixed-resource, and evidence gates.
+
+- [Complete multi-environment report](aks-10k-multi-environment-g5-d4-els3.md)
+- [Machine-readable multi-environment result](aks-10k-multi-environment-g5-d4-els3.json)
+- [Exact multi-environment matrix](../../k8s-infra/matrices/aks-multi-environment-g5-d4-els3.json)
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Report Markdown | `40019eedc0d180ae6bc8374ca2aeb17fdc748998692c85ed5c17d1f08ab7cd96` |
+| Report JSON | `86b3bab2a373eff268b0048052f5e4539c98f6b83954f3d64d970feeadb03e66` |
+| Matrix JSON | `1d0524295fa209712e84765b1c8c546b8c06e2aa06ae11b1c9f326b49067364b` |
+
+The old single-environment G5 change fanned out to 10,000 connections; the
+multi-environment change fans out to 100. The reports therefore define separate
+baselines and do not label one faster or slower than the other.
+
 ## Latest Three-stage G5 replay
 
 The latest retained run replayed the historical G5 topology with 10,000
@@ -16,6 +38,7 @@ SDK apply.
 - [One-second resource evidence](aks-10k-three-stage-g5-d4-node-evidence-1s.md)
 - [Resource evidence JSON](aks-10k-three-stage-g5-d4-node-evidence-1s.json)
 - [Exact experiment matrix](../../k8s-infra/matrices/aks-three-stage-g5-d4-els3.json)
+- [Selected-run connection ramp health](aks-10k-ramp-health.json)
 
 ### Latest retained k6 artifact
 
@@ -35,6 +58,7 @@ the canonical Redis-observer boundary.
 | Aggregate Markdown SHA-256 | `bca0ecec4fbbae79f54b3fbcf1b46655d66b8c7592ffb546a6a3992bddc97208` |
 | Aggregate JSON SHA-256 | `0f5bacc13da9c39ca6b5fb1c93fd75ab39f49b354014d5742cb967f4d1031c90` |
 | Matrix SHA-256 | `e95a3902468f98c12e1ee6880b1473ef3b50487cb08d92d5b44143bb5246e8d6` |
+| Ramp-health JSON SHA-256 | `cd0cd0f367c78ebb747e02a7a2a9eac53c64fe5f7ac32aa89000fd381f97ec6b` |
 
 - [Versioned latest k6 HTML](aks-10k-three-stage-g5-d4-runner-17.html)
 

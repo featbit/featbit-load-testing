@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "scope": "Selected runs shown in the Verified 10,000-connection result",
+  "contract": {
+    "executor": "ramping-vus",
+    "startConnections": 0,
+    "targetConnections": 10000,
+    "approximateConnectionsPerSecond": 100,
+    "configuredRampDurationSeconds": 100,
+    "timeSeriesCaveat": "The retained k6 summaries contain final counters and latency distributions, not a per-second active-connection series. They prove complete ramp admission and health, but not exactly 100 successful handshakes in every one-second bucket."
+  },
+  "definitions": {
+    "opened": "connection_opened",
+    "fullSync": "full_sync_received",
+    "readyBeforeHold": "ready_before_hold",
+    "warmupCoverage": "post_ramp_warmup_coverage; every connection observed both the unmeasured warm-up revision and its baseline restoration",
+    "survived": "connection_survived; opened without WebSocket error, heartbeat timeout, or invalid protocol state",
+    "faults": "Connection-open failures, initial-sync validation failures or timeouts, unexpected closes, WebSocket errors, heartbeat timeouts, and invalid messages",
+    "latencyAggregation": "Maximum p95 or p99 across the run's distributed k6 runners"
+  },
+  "experiments": [
+    {
+      "id": "five-group-g1",
+      "runId": "growth-20260724-211542-fdf299e3-2735",
+      "runners": 20,
+      "connectionsPerRunner": 500,
+      "opened": 10000,
+      "fullSync": 10000,
+      "readyBeforeHold": 10000,
+      "warmupCoverage": 10000,
+      "warmupPatchEvents": 20000,
+      "survived": 10000,
+      "connectionOpenLatencyMs": {
+        "worstRunnerP95": 28,
+        "worstRunnerP99": 40.02
+      },
+      "initialSyncLatencyMs": {
+        "worstRunnerP95": 37.05,
+        "worstRunnerP99": 57
+      },
+      "faults": {
+        "connectionOpenFailures": 0,
+        "initialSyncFailures": 0,
+        "initialSyncTimeouts": 0,
+        "unexpectedCloses": 0,
+        "webSocketErrors": 0,
+        "heartbeatTimeouts": 0,
+        "invalidMessages": 0
+      }
+    },
+    {
+      "id": "five-group-g2",
+      "runId": "growth-20260724-230351-fdf299e3-980a",
+      "runners": 40,
+      "connectionsPerRunner": 250,
+      "opened": 10000,
+      "fullSync": 10000,
+      "readyBeforeHold": 10000,
+      "warmupCoverage": 10000,
+      "warmupPatchEvents": 20000,
+      "survived": 10000,
+      "connectionOpenLatencyMs": {
+        "worstRunnerP95": 31.65,
+        "worstRunnerP99": 46.59
+      },
+      "initialSyncLatencyMs": {
+        "worstRunnerP95": 41.55,
+        "worstRunnerP99": 59.53
+      },
+      "faults": {
+        "connectionOpenFailures": 0,
+        "initialSyncFailures": 0,
+        "initialSyncTimeouts": 0,
+        "unexpectedCloses": 0,
+        "webSocketErrors": 0,
+        "heartbeatTimeouts": 0,
+        "invalidMessages": 0
+      }
+    },
+    {
+      "id": "five-group-g3",
+      "runId": "growth-20260724-205529-fdf299e3-a56c",
+      "runners": 20,
+      "connectionsPerRunner": 500,
+      "opened": 10000,
+      "fullSync": 10000,
+      "readyBeforeHold": 10000,
+      "warmupCoverage": 10000,
+      "warmupPatchEvents": 20000,
+      "survived": 10000,
+      "connectionOpenLatencyMs": {
+        "worstRunnerP95": 27,
+        "worstRunnerP99": 43.08
+      },
+      "initialSyncLatencyMs": {
+        "worstRunnerP95": 36,
+        "worstRunnerP99": 56.01
+      },
+      "faults": {
+        "connectionOpenFailures": 0,
+        "initialSyncFailures": 0,
+        "initialSyncTimeouts": 0,
+        "unexpectedCloses": 0,
+        "webSocketErrors": 0,
+        "heartbeatTimeouts": 0,
+        "invalidMessages": 0
+      }
+    },
+    {
+      "id": "five-group-g4",
+      "runId": "growth-20260724-224023-fdf299e3-619d",
+      "runners": 40,
+      "connectionsPerRunner": 250,
+      "opened": 10000,
+      "fullSync": 10000,
+      "readyBeforeHold": 10000,
+      "warmupCoverage": 10000,
+      "warmupPatchEvents": 20000,
+      "survived": 10000,
+      "connectionOpenLatencyMs": {
+        "worstRunnerP95": 25.55,
+        "worstRunnerP99": 49.89
+      },
+      "initialSyncLatencyMs": {
+        "worstRunnerP95": 37.55,
+        "worstRunnerP99": 69.63
+      },
+      "faults": {
+        "connectionOpenFailures": 0,
+        "initialSyncFailures": 0,
+        "initialSyncTimeouts": 0,
+        "unexpectedCloses": 0,
+        "webSocketErrors": 0,
+        "heartbeatTimeouts": 0,
+        "invalidMessages": 0
+      }
+    },
+    {
+      "id": "five-group-g5",
+      "runId": "growth-20260724-201133-fdf299e3-18ef",
+      "runners": 20,
+      "connectionsPerRunner": 500,
+      "opened": 10000,
+      "fullSync": 10000,
+      "readyBeforeHold": 10000,
+      "warmupCoverage": 10000,
+      "warmupPatchEvents": 20000,
+      "survived": 10000,
+      "connectionOpenLatencyMs": {
+        "worstRunnerP95": 36,
+        "worstRunnerP99": 55.01
+      },
+      "initialSyncLatencyMs": {
+        "worstRunnerP95": 52,
+        "worstRunnerP99": 77.01
+      },
+      "faults": {
+        "connectionOpenFailures": 0,
+        "initialSyncFailures": 0,
+        "initialSyncTimeouts": 0,
+        "unexpectedCloses": 0,
+        "webSocketErrors": 0,
+        "heartbeatTimeouts": 0,
+        "invalidMessages": 0
+      }
+    },
+    {
+      "id": "three-stage-original",
+      "runId": "growth-20260725-152154-ce333a5f-bb94",
+      "runners": 20,
+      "connectionsPerRunner": 500,
+      "opened": 10000,
+      "fullSync": 10000,
+      "readyBeforeHold": 10000,
+      "warmupCoverage": 10000,
+      "warmupPatchEvents": 20000,
+      "survived": 10000,
+      "connectionOpenLatencyMs": {
+        "worstRunnerP95": 39,
+        "worstRunnerP99": 60.01
+      },
+      "initialSyncLatencyMs": {
+        "worstRunnerP95": 53.05,
+        "worstRunnerP99": 78
+      },
+      "faults": {
+        "connectionOpenFailures": 0,
+        "initialSyncFailures": 0,
+        "initialSyncTimeouts": 0,
+        "unexpectedCloses": 0,
+        "webSocketErrors": 0,
+        "heartbeatTimeouts": 0,
+        "invalidMessages": 0
+      }
+    },
+    {
+      "id": "three-stage-g5-replay",
+      "runId": "growth-20260726-164117-6c29992e-0491",
+      "runners": 20,
+      "connectionsPerRunner": 500,
+      "opened": 10000,
+      "fullSync": 10000,
+      "readyBeforeHold": 10000,
+      "warmupCoverage": 10000,
+      "warmupPatchEvents": 20000,
+      "survived": 10000,
+      "connectionOpenLatencyMs": {
+        "worstRunnerP95": 31,
+        "worstRunnerP99": 42.03
+      },
+      "initialSyncLatencyMs": {
+        "worstRunnerP95": 42,
+        "worstRunnerP99": 56.06
+      },
+      "faults": {
+        "connectionOpenFailures": 0,
+        "initialSyncFailures": 0,
+        "initialSyncTimeouts": 0,
+        "unexpectedCloses": 0,
+        "webSocketErrors": 0,
+        "heartbeatTimeouts": 0,
+        "invalidMessages": 0
+      }
+    }
+  ]
+}

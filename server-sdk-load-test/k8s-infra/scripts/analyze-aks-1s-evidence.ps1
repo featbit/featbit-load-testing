@@ -737,31 +737,61 @@ foreach ($pod in @(
     }
 }
 
-$controllerLog = @(
-    Get-ChildItem `
-        -LiteralPath $archiveDirectory `
-        -File `
-        -Filter "$testRunName-1.log"
-)[0]
-if ($null -eq $controllerLog) {
-    throw "Runner 1 controller log is missing for '$RunId'."
-}
 $events = [ordered]@{}
-foreach ($line in Get-Content -LiteralPath $controllerLog.FullName) {
-    $match = [regex]::Match(
-        $line,
-        '^time="(?<time>[^"]+)".+\[controller\] applying ' +
-        'rev-(?<revision>\d+) to '
-    )
-    if ($match.Success) {
-        $revisionKey = [string]([int]$match.Groups["revision"].Value)
-        $events[$revisionKey] = [DateTimeOffset]::Parse(
-            $match.Groups["time"].Value
+$externalControllerPath = Join-Path `
+    $archiveDirectory `
+    "$RunId-external-controller-events.jsonl"
+if (Test-Path -LiteralPath $externalControllerPath -PathType Leaf) {
+    foreach ($line in Get-Content -LiteralPath $externalControllerPath) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+        $record = $line | ConvertFrom-Json
+        if (
+            [string]$record.runId -cne $RunId -or
+            [string]$record.event -cne "request_start" -or
+            [int]$record.revisionIndex -le 0
+        ) {
+            continue
+        }
+        $revisionKey = [string][int]$record.revisionIndex
+        if ($events.Contains($revisionKey)) {
+            throw (
+                "External controller evidence contains duplicate request " +
+                "starts for revision $revisionKey."
+            )
+        }
+        $events[$revisionKey] = [DateTimeOffset]::FromUnixTimeMilliseconds(
+            [int64]$record.atUnixMs
         )
     }
 }
+else {
+    $controllerLog = @(
+        Get-ChildItem `
+            -LiteralPath $archiveDirectory `
+            -File `
+            -Filter "$testRunName-1.log"
+    )[0]
+    if ($null -eq $controllerLog) {
+        throw "Runner 1 controller log is missing for '$RunId'."
+    }
+    foreach ($line in Get-Content -LiteralPath $controllerLog.FullName) {
+        $match = [regex]::Match(
+            $line,
+            '^time="(?<time>[^"]+)".+\[controller\] applying ' +
+            'rev-(?<revision>\d+) to '
+        )
+        if ($match.Success) {
+            $revisionKey = [string]([int]$match.Groups["revision"].Value)
+            $events[$revisionKey] = [DateTimeOffset]::Parse(
+                $match.Groups["time"].Value
+            )
+        }
+    }
+}
 if ($events.Count -eq 0) {
-    throw "No controller revision timestamps were found in '$($controllerLog.Name)'."
+    throw "No controller revision timestamps were found for '$RunId'."
 }
 
 $recordsByNode = @{}

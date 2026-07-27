@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   postRampWarmupDurationSeconds,
+  scheduledControllerDelaySeconds,
   validatePostRampWarmupFlagKey,
 } from "../k6/lib/controller-plan.js";
 
@@ -32,4 +33,21 @@ test("rejects measuring the post-ramp warm-up flag", () => {
 test("accounts for both post-ramp warm-up mutations", () => {
   assert.equal(postRampWarmupDurationSeconds("loadtest-sync-probe-02", 2), 4);
   assert.equal(postRampWarmupDurationSeconds("", 2), 0);
+});
+
+test("schedules a controller update against an absolute UTC millisecond", () => {
+  assert.equal(scheduledControllerDelaySeconds(10_000, 15_000), 5);
+  assert.equal(scheduledControllerDelaySeconds(15_500, 15_000), 0);
+  assert.equal(scheduledControllerDelaySeconds(10_000, 0), 0);
+});
+
+test("rejects a controller update that cannot meet the interval tolerance", () => {
+  assert.throws(
+    () => scheduledControllerDelaySeconds(15_751, 15_000),
+    /751ms late/,
+  );
+  assert.throws(
+    () => scheduledControllerDelaySeconds(10_000.5, 15_000),
+    /nowUnixMs must be a non-negative integer/,
+  );
 });

@@ -18,6 +18,12 @@ import {
   runnerIndexFromHostname,
 } from "./lib/distribution.js";
 import {
+  assignEnvironmentToConnection,
+  connectionsPerEnvironmentPerRunner,
+  parseMultiEnvironmentSecret,
+  validateMultiEnvironmentTopology,
+} from "./lib/multi-environment.js";
+import {
   postRampWarmupDurationSeconds,
   validatePostRampWarmupFlagKey,
 } from "./lib/controller-plan.js";
@@ -59,8 +65,39 @@ const FEATBIT_API_URL = String(__ENV.FEATBIT_API_URL ?? "").trim();
 const FEATBIT_API_ACCESS_TOKEN = String(__ENV.FEATBIT_API_ACCESS_TOKEN ?? "").trim();
 const FEATBIT_ENVIRONMENT_ID = String(__ENV.FEATBIT_ENVIRONMENT_ID ?? "").trim();
 const RUN_ID = String(__ENV.RUN_ID ?? "local-run").trim();
+const MULTI_ENVIRONMENT_MODE = booleanEnv("MULTI_ENVIRONMENT_MODE");
+const MULTI_ENVIRONMENT_SECRET_PATH = String(
+  __ENV.MULTI_ENVIRONMENT_SECRET_PATH ??
+    "/var/run/featbit-loadtest/environments.json",
+).trim();
+const MULTI_ENVIRONMENT_CONFIG = MULTI_ENVIRONMENT_MODE
+  ? parseMultiEnvironmentSecret(open(MULTI_ENVIRONMENT_SECRET_PATH))
+  : {
+      schemaVersion: 1,
+      experimentId: "legacy-single-environment",
+      projectId: "",
+      targetEnvironmentId: FEATBIT_ENVIRONMENT_ID,
+      targetEnvironmentKey: "",
+      environments: [
+        {
+          index: 1,
+          id: FEATBIT_ENVIRONMENT_ID,
+          key: "",
+          serverSecret: FEATBIT_SERVER_SECRET,
+        },
+      ],
+    };
 const PROBE_FLAG_KEYS = parseProbeFlagKeys(
   __ENV.PROBE_FLAG_KEYS ?? __ENV.PROBE_FLAG_KEY ?? "loadtest-sync-probe",
+);
+const VALIDATED_FLAG_KEYS = parseProbeFlagKeys(
+  __ENV.VALIDATED_FLAG_KEYS ??
+    [
+      ...PROBE_FLAG_KEYS,
+      String(__ENV.POST_RAMP_WARMUP_FLAG_KEY ?? "").trim(),
+    ]
+      .filter(Boolean)
+      .join(","),
 );
 const POST_RAMP_WARMUP_FLAG_KEY = String(
   __ENV.POST_RAMP_WARMUP_FLAG_KEY ?? "",
@@ -78,6 +115,19 @@ const EXPECTED_CONNECTIONS_PER_RUNNER = expectedConnectionsPerRunner(
   MAX_CONNECTIONS,
   LOADTEST_PARALLELISM,
 );
+const EXPECTED_ENVIRONMENT_COUNT = integerEnv(
+  "EXPECTED_ENVIRONMENT_COUNT",
+  MULTI_ENVIRONMENT_CONFIG.environments.length,
+);
+const EXPECTED_CONNECTIONS_PER_ENVIRONMENT_PER_RUNNER = integerEnv(
+  "EXPECTED_CONNECTIONS_PER_ENVIRONMENT_PER_RUNNER",
+  connectionsPerEnvironmentPerRunner(
+    EXPECTED_CONNECTIONS_PER_RUNNER,
+    MULTI_ENVIRONMENT_CONFIG.environments.length,
+  ),
+);
+const EXPECTED_TARGET_CONNECTIONS_PER_RUNNER =
+  EXPECTED_CONNECTIONS_PER_ENVIRONMENT_PER_RUNNER;
 const RAMP_UP_SECONDS = Math.ceil(MAX_CONNECTIONS / CONNECTIONS_PER_SECOND);
 const STABILIZATION_SECONDS = integerEnv("STABILIZATION_SECONDS", 30, 0);
 const HOLD_DURATION_SECONDS = integerEnv("HOLD_DURATION_SECONDS", 600);
@@ -151,6 +201,8 @@ const pongReceived = new Counter("pong_received");
 const unexpectedClose = new Counter("unexpected_close");
 const websocketError = new Counter("websocket_error");
 const invalidMessage = new Counter("invalid_message");
+const connectionOpenFailure = new Counter("connection_open_failure");
+const initialSyncFailure = new Counter("initial_sync_failure");
 const initialSyncTimeout = new Counter("initial_sync_timeout");
 const heartbeatTimeout = new Counter("heartbeat_timeout");
 const duplicatePatch = new Counter("duplicate_patch");
@@ -169,6 +221,8 @@ const controllerRevisionUpdates = new Counter("controller_revision_updates");
 const postRampWarmupPatchReceived = new Counter(
   "post_ramp_warmup_patch_received",
 );
+const crossEnvironmentDelivery = new Counter("cross_environment_delivery");
+const backgroundConnectionChecked = new Counter("background_connection_checked");
 
 const connectionOpenSuccess = new Rate("connection_open_success");
 const initialSyncSuccess = new Rate("initial_sync_success");
@@ -179,6 +233,7 @@ const postRampWarmupCoverage = new Rate("post_ramp_warmup_coverage");
 const probeRevisionCoverage = new Rate("probe_revision_coverage");
 const finalAppliedRevisionSuccess = new Rate("final_applied_revision_success");
 const controllerUpdateSuccess = new Rate("controller_update_success");
+const backgroundIsolationSuccess = new Rate("background_isolation_success");
 const probeUpdatedAtToSdkOver60Ms = new Rate("probe_updated_at_to_sdk_over_60ms");
 const probeUpdatedAtToSdkOver80Ms = new Rate("probe_updated_at_to_sdk_over_80ms");
 const probeUpdatedAtToSdkOver100Ms = new Rate("probe_updated_at_to_sdk_over_100ms");
@@ -202,11 +257,14 @@ const ZERO_VALUE_COUNTERS = [
   unexpectedClose,
   websocketError,
   invalidMessage,
+  connectionOpenFailure,
+  initialSyncFailure,
   initialSyncTimeout,
   heartbeatTimeout,
   revisionSequenceError,
   unexpectedRevision,
   clockSkewDetected,
+  crossEnvironmentDelivery,
 ];
 
 if (STRICT_PATCH_DELIVERY) {
@@ -215,6 +273,10 @@ if (STRICT_PATCH_DELIVERY) {
 
 const thresholds = {
   connection_opened: [
+    `count>=${EXPECTED_CONNECTIONS_PER_RUNNER}`,
+    `count<=${EXPECTED_CONNECTIONS_PER_RUNNER}`,
+  ],
+  full_sync_received: [
     `count>=${EXPECTED_CONNECTIONS_PER_RUNNER}`,
     `count<=${EXPECTED_CONNECTIONS_PER_RUNNER}`,
   ],
@@ -232,15 +294,33 @@ const thresholds = {
   revision_sequence_error: ["count==0"],
   unexpected_revision: ["count==0"],
   clock_skew_detected: ["count==0"],
+  connection_open_failure: ["count==0"],
+  initial_sync_failure: ["count==0"],
+  cross_environment_delivery: ["count==0"],
   initial_sync_latency_ms: [`p(99)<${INITIAL_SYNC_P99_MS}`],
-  probe_updated_at_to_sdk_latency_ms: [
-    `p(95)<${SYNC_P95_MS}`,
-    `p(99)<${SYNC_P99_MS}`,
-  ],
 };
 
 if (POST_RAMP_WARMUP_FLAG_KEY) {
   thresholds.post_ramp_warmup_coverage = ["rate==1"];
+  thresholds.post_ramp_warmup_patch_received = [
+    `count>=${EXPECTED_TARGET_CONNECTIONS_PER_RUNNER * 2}`,
+    `count<=${EXPECTED_TARGET_CONNECTIONS_PER_RUNNER * 2}`,
+  ];
+}
+
+if (MULTI_ENVIRONMENT_MODE) {
+  const expectedBackgroundConnections =
+    EXPECTED_CONNECTIONS_PER_RUNNER - EXPECTED_TARGET_CONNECTIONS_PER_RUNNER;
+  thresholds.background_connection_checked = [
+    `count>=${expectedBackgroundConnections}`,
+    `count<=${expectedBackgroundConnections}`,
+  ];
+  thresholds.background_isolation_success = ["rate==1"];
+} else {
+  thresholds.probe_updated_at_to_sdk_latency_ms = [
+    `p(95)<${SYNC_P95_MS}`,
+    `p(99)<${SYNC_P99_MS}`,
+  ];
 }
 
 if (STRICT_PATCH_DELIVERY) {
@@ -251,10 +331,22 @@ if (STRICT_PATCH_DELIVERY) {
 
 for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
   thresholds[`probe_revision_coverage{revision_index:${index + 1}}`] = ["rate==1"];
-  thresholds[`probe_updated_at_to_sdk_latency_ms{revision_index:${index + 1}}`] = [
-    `p(95)<${SYNC_P95_MS}`,
-    `p(99)<${SYNC_P99_MS}`,
+  thresholds[`probe_revision_received{revision_index:${index + 1}}`] = [
+    `count>=${EXPECTED_TARGET_CONNECTIONS_PER_RUNNER}`,
+    `count<=${EXPECTED_TARGET_CONNECTIONS_PER_RUNNER}`,
   ];
+  if (MULTI_ENVIRONMENT_MODE) {
+    // Materialize the five-sample runner/revision Trend for diagnostic
+    // correlation with one-second node evidence. Exact count is gated by
+    // probe_revision_received above; runner-cohort percentiles are not gates.
+    thresholds[
+      `probe_updated_at_to_sdk_latency_ms{revision_index:${index + 1}}`
+    ] = ["max>=0"];
+  } else {
+    thresholds[
+      `probe_updated_at_to_sdk_latency_ms{revision_index:${index + 1}}`
+    ] = [`p(95)<${SYNC_P95_MS}`, `p(99)<${SYNC_P99_MS}`];
+  }
   thresholds[`probe_updated_at_to_sdk_over_100ms{revision_index:${index + 1}}`] = [
     "rate<=1",
   ];
@@ -305,10 +397,10 @@ export const options = {
   summaryTrendStats: ["count", "avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"],
 };
 
-function buildStreamingUrl() {
+function buildStreamingUrl(serverSecret) {
   const baseUrl = FEATBIT_STREAMING_URL.replace(/\/+$/, "");
   const endpoint = baseUrl.endsWith("/streaming") ? baseUrl : `${baseUrl}/streaming`;
-  const token = generateConnectionToken(FEATBIT_SERVER_SECRET);
+  const token = generateConnectionToken(serverSecret);
   return `${endpoint}?type=server&token=${encodeURIComponent(token)}`;
 }
 
@@ -325,7 +417,85 @@ function getProbeTags(probeState) {
   return {
     flag_index: String(probeState.index + 1),
     flag_key: probeState.key,
+    environment_id: probeState.environmentId,
+    runner_index: String(probeState.runnerIndex),
   };
+}
+
+function logConnectionReady(state, atMs) {
+  console.log(
+    [
+      "STREAM_READY",
+      "1",
+      String(atMs),
+      RUN_ID,
+      state.environment.id,
+      String(state.runnerIndex),
+      String(state.localConnectionIndex),
+    ].join("|"),
+  );
+}
+
+function logAppliedRevision(probeState, snapshot, revisionIndex, appliedAtMs) {
+  console.log(
+    [
+      "STREAM_APPLY",
+      "1",
+      String(appliedAtMs),
+      RUN_ID,
+      probeState.environmentId,
+      probeState.key,
+      String(revisionIndex + 1),
+      snapshot.revision,
+      String(probeState.runnerIndex),
+      String(probeState.localConnectionIndex),
+    ].join("|"),
+  );
+}
+
+function logWarmupDelivery(state, snapshot, phase, appliedAtMs) {
+  console.log(
+    [
+      "STREAM_WARMUP",
+      "1",
+      String(appliedAtMs),
+      RUN_ID,
+      state.environment.id,
+      POST_RAMP_WARMUP_FLAG_KEY,
+      phase,
+      snapshot.revision,
+      String(state.runnerIndex),
+      String(state.localConnectionIndex),
+    ].join("|"),
+  );
+}
+
+function recordCrossEnvironmentDelivery(state, flagKey, snapshot, phase) {
+  const tags = {
+    environment_id: state.environment.id,
+    environment_index: String(state.environment.index),
+    flag_key: flagKey,
+    phase,
+    revision: snapshot.revision,
+    runner_index: String(state.runnerIndex),
+  };
+  crossEnvironmentDelivery.add(1, tags);
+  state.crossEnvironmentDelivery = true;
+  state.invalid = true;
+  console.error(
+    [
+      "STREAM_CROSS_ENV",
+      "1",
+      String(Date.now()),
+      RUN_ID,
+      state.environment.id,
+      flagKey,
+      phase,
+      snapshot.revision,
+      String(state.runnerIndex),
+      String(state.localConnectionIndex),
+    ].join("|"),
+  );
 }
 
 function recordProbePatch(snapshot, probeState) {
@@ -371,7 +541,8 @@ function recordProbePatch(snapshot, probeState) {
     return;
   }
 
-  const latencyMs = Date.now() - snapshot.updatedAtMs;
+  const appliedAtMs = Date.now();
+  const latencyMs = appliedAtMs - snapshot.updatedAtMs;
   if (latencyMs < -CLOCK_SKEW_TOLERANCE_MS) {
     clockSkewDetected.add(1, revisionTags);
   }
@@ -384,9 +555,11 @@ function recordProbePatch(snapshot, probeState) {
     probeUpdatedAtToSdkLatencyWithoutSpikes.add(latencyMs, revisionTags);
   }
   probeRevisionReceived.add(1, revisionTags);
+  logAppliedRevision(probeState, snapshot, outcome.revisionIndex, appliedAtMs);
 }
 
-function recordPostRampWarmupPatch(snapshot, warmupState) {
+function recordPostRampWarmupPatch(snapshot, state) {
+  const warmupState = state.postRampWarmup;
   const warmupRevision = EXPECTED_REVISIONS[0];
   let phase;
 
@@ -410,7 +583,9 @@ function recordPostRampWarmupPatch(snapshot, warmupState) {
     revision: snapshot.revision,
   };
   postRampWarmupPatchReceived.add(1, tags);
-  postRampWarmupLatency.add(Date.now() - snapshot.updatedAtMs, tags);
+  const appliedAtMs = Date.now();
+  postRampWarmupLatency.add(appliedAtMs - snapshot.updatedAtMs, tags);
+  logWarmupDelivery(state, snapshot, phase, appliedAtMs);
 }
 
 function controllerRequest(method, url, body, operation, tags = {}) {
@@ -479,10 +654,11 @@ function logControlTiming(event, atMs, flagKey, revision, revisionIndex, attempt
   console.log(
     [
       "STREAM_CONTROL",
-      "1",
+      "2",
       event,
       String(atMs),
       RUN_ID,
+      FEATBIT_ENVIRONMENT_ID,
       String(revisionIndex),
       revision,
       flagKey,
@@ -634,11 +810,46 @@ export function setup() {
   if (FEATBIT_STREAMING_URL.includes("?")) {
     errors.push("FEATBIT_STREAMING_URL must be the base URL without query parameters");
   }
-  if (!FEATBIT_SERVER_SECRET) {
+  if (!MULTI_ENVIRONMENT_MODE && !FEATBIT_SERVER_SECRET) {
     errors.push("FEATBIT_SERVER_SECRET is required");
+  }
+  if (MULTI_ENVIRONMENT_MODE) {
+    try {
+      validateMultiEnvironmentTopology({
+        environmentCount: MULTI_ENVIRONMENT_CONFIG.environments.length,
+        parallelism: LOADTEST_PARALLELISM,
+        connectionsPerRunner: EXPECTED_CONNECTIONS_PER_RUNNER,
+        connectionsPerEnvironmentPerRunner:
+          EXPECTED_CONNECTIONS_PER_ENVIRONMENT_PER_RUNNER,
+        totalConnections: MAX_CONNECTIONS,
+      });
+    } catch (error) {
+      errors.push(error.message);
+    }
+    if (MULTI_ENVIRONMENT_CONFIG.environments.length !== EXPECTED_ENVIRONMENT_COUNT) {
+      errors.push(
+        `multi-environment secret contains ${MULTI_ENVIRONMENT_CONFIG.environments.length} ` +
+          `environments; expected ${EXPECTED_ENVIRONMENT_COUNT}`,
+      );
+    }
+    if (MULTI_ENVIRONMENT_CONFIG.targetEnvironmentId !== FEATBIT_ENVIRONMENT_ID) {
+      errors.push(
+        "FEATBIT_ENVIRONMENT_ID must match the multi-environment targetEnvironmentId",
+      );
+    }
   }
   if (PROBE_FLAG_KEYS.length === 0) {
     errors.push("PROBE_FLAG_KEYS must contain at least one key");
+  }
+  if (VALIDATED_FLAG_KEYS.length === 0) {
+    errors.push("VALIDATED_FLAG_KEYS must contain at least one key");
+  }
+  for (const requiredKey of [...PROBE_FLAG_KEYS, POST_RAMP_WARMUP_FLAG_KEY].filter(
+    Boolean,
+  )) {
+    if (!VALIDATED_FLAG_KEYS.includes(requiredKey)) {
+      errors.push(`VALIDATED_FLAG_KEYS must include '${requiredKey}'`);
+    }
   }
   try {
     validatePostRampWarmupFlagKey(POST_RAMP_WARMUP_FLAG_KEY, PROBE_FLAG_KEYS);
@@ -759,8 +970,12 @@ export function setup() {
       "FeatBit server-streaming load test",
       `- ${MAX_CONNECTIONS} connections, approximately ${CONNECTIONS_PER_SECOND}/s (${RAMP_UP_SECONDS}s ramp-up)`,
       `- runner ${runnerIndex}/${LOADTEST_PARALLELISM}: ${EXPECTED_CONNECTIONS_PER_RUNNER} connections`,
+      `- environments: ${MULTI_ENVIRONMENT_CONFIG.environments.length}; ` +
+        `${EXPECTED_CONNECTIONS_PER_ENVIRONMENT_PER_RUNNER} connections/environment/runner`,
+      `- target environment: ${MULTI_ENVIRONMENT_CONFIG.targetEnvironmentId || "single-environment mode"}`,
       `- measured hold: T+${holdStartsAt}s through T+${holdStartsAt + HOLD_DURATION_SECONDS}s`,
       `- probe flags (${PROBE_FLAG_KEYS.length}): ${PROBE_FLAG_KEYS.join(", ")}`,
+      `- full-sync validated flags: ${VALIDATED_FLAG_KEYS.length}`,
       `- post-ramp warm-up flag: ${POST_RAMP_WARMUP_FLAG_KEY || "disabled"}`,
       `- initial value for every probe flag: ${PROBE_INITIAL_VALUE}`,
       controllerDescription,
@@ -768,7 +983,7 @@ export function setup() {
     ].join("\n"),
   );
 
-  return { autoController: controlsProbeFlags };
+  return { autoController: controlsProbeFlags, runnerIndex };
 }
 
 export function controlProbeRevisions(data) {
@@ -854,10 +1069,22 @@ export function teardown(data) {
   }
 }
 
-export default function () {
+export default function (data) {
   for (const counter of ZERO_VALUE_COUNTERS) {
     counter.add(0);
   }
+
+  const runnerIndex =
+    Number(data?.runnerIndex) ||
+    runnerIndexFromHostname(__ENV.HOSTNAME, LOADTEST_PARALLELISM);
+  const localConnectionIndex = Number(exec.vu.idInInstance);
+  const environment = assignEnvironmentToConnection(
+    localConnectionIndex,
+    MULTI_ENVIRONMENT_CONFIG.environments,
+    EXPECTED_CONNECTIONS_PER_RUNNER,
+  );
+  const isTargetEnvironment =
+    environment.id === MULTI_ENVIRONMENT_CONFIG.targetEnvironmentId;
 
   const scenarioStartAt = exec.scenario.startTime;
   const holdStartsAt = scenarioStartAt + RAMP_UP_MS + STABILIZATION_MS;
@@ -881,14 +1108,24 @@ export default function () {
     hadError: false,
     invalid: false,
     initialSyncValid: false,
+    initialValuesValid: false,
     initialSyncAt: null,
     initialSyncTimedOut: false,
     heartbeatTimedOut: false,
+    crossEnvironmentDelivery: false,
     lastPongAt: null,
     lastPingSentAt: null,
-    probes: PROBE_FLAG_KEYS.map((key, index) =>
-      createProbeState(key, index, EXPECTED_REVISIONS.length),
-    ),
+    runnerIndex,
+    localConnectionIndex,
+    environment,
+    isTargetEnvironment,
+    probes: PROBE_FLAG_KEYS.map((key, index) => ({
+      ...createProbeState(key, index, EXPECTED_REVISIONS.length),
+      environmentId: environment.id,
+      environmentIndex: environment.index,
+      runnerIndex,
+      localConnectionIndex,
+    })),
     postRampWarmup: {
       revisionSeen: false,
       baselineSeen: false,
@@ -914,7 +1151,13 @@ export default function () {
     }
 
     connectionOpenSuccess.add(state.opened);
+    if (!state.opened) {
+      connectionOpenFailure.add(1);
+    }
     initialSyncSuccess.add(state.initialSyncValid && !state.initialSyncTimedOut);
+    if (!state.initialSyncValid && !state.initialSyncTimedOut) {
+      initialSyncFailure.add(1);
+    }
     readyBeforeHold.add(
       state.opened &&
         state.initialSyncValid &&
@@ -925,30 +1168,36 @@ export default function () {
       state.opened && !state.hadError && !state.heartbeatTimedOut && !state.invalid,
     );
     initialProbeValueSuccess.add(
-      state.probes.every((probeState) => probeState.initialValueValid),
+      state.initialValuesValid,
     );
-    if (POST_RAMP_WARMUP_FLAG_KEY) {
+    if (POST_RAMP_WARMUP_FLAG_KEY && state.isTargetEnvironment) {
       postRampWarmupCoverage.add(
         state.postRampWarmup.revisionSeen && state.postRampWarmup.baselineSeen,
       );
     }
 
-    for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
-      probeRevisionCoverage.add(
-        state.probes.every((probeState) => probeState.seenRevisions[index]),
-        {
-          revision_index: String(index + 1),
-          revision: EXPECTED_REVISIONS[index],
-        },
-      );
-    }
+    if (state.isTargetEnvironment) {
+      for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
+        probeRevisionCoverage.add(
+          state.probes.every((probeState) => probeState.seenRevisions[index]),
+          {
+            revision_index: String(index + 1),
+            revision: EXPECTED_REVISIONS[index],
+          },
+        );
+      }
 
-    finalAppliedRevisionSuccess.add(
-      state.probes.every(
-        (probeState) =>
-          probeState.appliedRevision === EXPECTED_REVISIONS[EXPECTED_REVISIONS.length - 1],
-      ),
-    );
+      finalAppliedRevisionSuccess.add(
+        state.probes.every(
+          (probeState) =>
+            probeState.appliedRevision ===
+            EXPECTED_REVISIONS[EXPECTED_REVISIONS.length - 1],
+        ),
+      );
+    } else if (MULTI_ENVIRONMENT_MODE) {
+      backgroundConnectionChecked.add(1);
+      backgroundIsolationSuccess.add(!state.crossEnvironmentDelivery);
+    }
 
     if (socket && socket.readyState === 1) {
       state.plannedClose = true;
@@ -957,14 +1206,14 @@ export default function () {
   };
 
   try {
-    socket = new WebSocket(buildStreamingUrl(), [], {
+    socket = new WebSocket(buildStreamingUrl(environment.serverSecret), [], {
       tags: { name: "featbit-server-streaming", sdk_type: "server" },
     });
   } catch (error) {
     websocketError.add(1);
     state.hadError = true;
     if (DEBUG && exec.vu.idInTest <= 5) {
-      console.error(`[VU ${exec.vu.idInTest}] failed to create WebSocket: ${error.message}`);
+      console.error(`[VU ${exec.vu.idInTest}] failed to create WebSocket`);
     }
   }
 
@@ -1041,38 +1290,48 @@ export default function () {
 
         state.initialSyncAt = Date.now();
         let allProbeConfigsValid = true;
+        const initialSnapshots = new Map();
 
-        for (const probeState of state.probes) {
-          const probeFlag = findFeatureFlag(message.featureFlags, probeState.key);
+        for (const flagKey of VALIDATED_FLAG_KEYS) {
+          const probeFlag = findFeatureFlag(message.featureFlags, flagKey);
           if (!probeFlag) {
             allProbeConfigsValid = false;
             reportInvalid(
               state,
-              `full data-sync did not contain probe flag '${probeState.key}'`,
+              `full data-sync did not contain probe flag '${flagKey}'`,
             );
             continue;
           }
 
           try {
             const snapshot = extractProbeSnapshot(probeFlag);
-            probeState.initialValueValid = snapshot.revision === PROBE_INITIAL_VALUE;
-            initializeProbeState(probeState, snapshot);
-
-            if (!probeState.initialValueValid) {
+            initialSnapshots.set(flagKey, snapshot);
+            if (snapshot.revision !== PROBE_INITIAL_VALUE) {
+              allProbeConfigsValid = false;
               reportInvalid(
                 state,
-                `probe flag '${probeState.key}' initial value was '${snapshot.revision}', expected '${PROBE_INITIAL_VALUE}'`,
+                `probe flag '${flagKey}' initial value was '${snapshot.revision}', expected '${PROBE_INITIAL_VALUE}'`,
               );
             }
           } catch (error) {
             allProbeConfigsValid = false;
-            reportInvalid(state, `probe flag '${probeState.key}': ${error.message}`);
+            reportInvalid(state, `probe flag '${flagKey}': ${error.message}`);
+          }
+        }
+
+        for (const probeState of state.probes) {
+          const snapshot = initialSnapshots.get(probeState.key);
+          if (snapshot) {
+            probeState.initialValueValid = snapshot.revision === PROBE_INITIAL_VALUE;
+            initializeProbeState(probeState, snapshot);
           }
         }
 
         state.initialSyncValid = allProbeConfigsValid;
+        state.initialValuesValid = allProbeConfigsValid;
         if (state.initialSyncValid) {
           initialSyncLatency.add(state.initialSyncAt - iterationStartedAt);
+          logConnectionReady(state, state.initialSyncAt);
         }
         return;
       }
@@ -1085,10 +1344,20 @@ export default function () {
         );
         if (warmupFlag) {
           try {
-            recordPostRampWarmupPatch(
-              extractProbeSnapshot(warmupFlag),
-              state.postRampWarmup,
-            );
+            const warmupSnapshot = extractProbeSnapshot(warmupFlag);
+            if (state.isTargetEnvironment) {
+              recordPostRampWarmupPatch(warmupSnapshot, state);
+            } else if (
+              warmupSnapshot.revision === EXPECTED_REVISIONS[0] ||
+              warmupSnapshot.revision === PROBE_INITIAL_VALUE
+            ) {
+              recordCrossEnvironmentDelivery(
+                state,
+                POST_RAMP_WARMUP_FLAG_KEY,
+                warmupSnapshot,
+                "warmup",
+              );
+            }
           } catch (error) {
             reportInvalid(
               state,
@@ -1105,7 +1374,22 @@ export default function () {
         }
 
         try {
-          recordProbePatch(extractProbeSnapshot(probeFlag), probeState);
+          const snapshot = extractProbeSnapshot(probeFlag);
+          if (
+            !state.isTargetEnvironment &&
+            EXPECTED_REVISION_INDEX[snapshot.revision] !== undefined
+          ) {
+            recordCrossEnvironmentDelivery(
+              state,
+              probeState.key,
+              snapshot,
+              "formal",
+            );
+            continue;
+          }
+          if (state.isTargetEnvironment) {
+            recordProbePatch(snapshot, probeState);
+          }
         } catch (error) {
           reportInvalid(state, `probe flag '${probeState.key}': ${error.message}`);
         }
@@ -1116,7 +1400,7 @@ export default function () {
       websocketError.add(1);
       state.hadError = true;
       if (DEBUG && exec.vu.idInTest <= 5) {
-        console.error(`[VU ${exec.vu.idInTest}] WebSocket error: ${event?.error ?? "unknown"}`);
+        console.error(`[VU ${exec.vu.idInTest}] WebSocket error`);
       }
     };
 

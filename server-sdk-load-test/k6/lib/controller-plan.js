@@ -1,5 +1,5 @@
 function requireNonNegativeInteger(value, name) {
-  if (!Number.isInteger(value) || value < 0) {
+  if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${name} must be a non-negative integer`);
   }
 }
@@ -25,4 +25,26 @@ export function validatePostRampWarmupFlagKey(rawFlagKey, measuredFlagKeys) {
 export function postRampWarmupDurationSeconds(flagKey, settleSeconds) {
   requireNonNegativeInteger(settleSeconds, "CONTROLLER_POST_RAMP_WARMUP_SETTLE_SECONDS");
   return String(flagKey ?? "").trim() ? settleSeconds * 2 : 0;
+}
+
+export function scheduledControllerDelaySeconds(
+  nowUnixMs,
+  dueUnixMs,
+  maximumLatenessMs = 750,
+) {
+  requireNonNegativeInteger(nowUnixMs, "nowUnixMs");
+  requireNonNegativeInteger(dueUnixMs, "CONTROLLER_DUE_UNIX_MS");
+  requireNonNegativeInteger(maximumLatenessMs, "maximumLatenessMs");
+  if (dueUnixMs === 0) {
+    return 0;
+  }
+
+  const latenessMs = nowUnixMs - dueUnixMs;
+  if (latenessMs > maximumLatenessMs) {
+    throw new Error(
+      `scheduled controller update is ${latenessMs}ms late; ` +
+        `maximum is ${maximumLatenessMs}ms`,
+    );
+  }
+  return Math.max(0, dueUnixMs - nowUnixMs) / 1000;
 }
