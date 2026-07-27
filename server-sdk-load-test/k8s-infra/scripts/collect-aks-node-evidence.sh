@@ -108,44 +108,168 @@ read_protocol_value() {
     ' "$source_path" 2>/dev/null || true
 }
 
-els_mapping="$(
-    awk -F '|' -v node="$NODE_NAME" '$1 == node { print; exit }' \
+els_cgroups_path="${buffer_dir}/${RUN_ID}-node-${node_token}-els-cgroups.txt"
+els_mappings="$(
+    awk -F '|' -v node="$NODE_NAME" '$1 == node { print }' \
         "$els_map_path" 2>/dev/null || true
 )"
-els_pod=""
-els_container_id=""
-els_container_cgroup_path=""
-els_cpu_limit_cgroup_path=""
-if [ -n "$els_mapping" ]; then
-    els_pod="$(printf '%s' "$els_mapping" | cut -d '|' -f 2)"
-    els_container_id="$(printf '%s' "$els_mapping" | cut -d '|' -f 3)"
-    els_container_cgroup_path="$(
-        find /host/sys/fs/cgroup -type d \
-            -name "*${els_container_id}*" 2>/dev/null |
-            head -n 1
-    )"
-    if [ -z "$els_container_cgroup_path" ]; then
-        echo "Could not find the host cgroup for ELS container ${els_container_id}." >&2
-        exit 1
-    fi
-
-    current_cgroup="$els_container_cgroup_path"
-    while [ "$current_cgroup" != "/host/sys/fs/cgroup" ] && \
-        [ "$current_cgroup" != "/" ]; do
-        if [ -r "${current_cgroup}/cpu.max" ]; then
-            cpu_quota="$(awk '{ print $1 }' "${current_cgroup}/cpu.max")"
-            if [ -n "$cpu_quota" ] && [ "$cpu_quota" != "max" ]; then
-                els_cpu_limit_cgroup_path="$current_cgroup"
-                break
+: > "${els_cgroups_path}.partial"
+if [ -n "$els_mappings" ]; then
+    printf '%s\n' "$els_mappings" |
+        while IFS='|' read -r mapping_node mapping_pod mapping_container_id; do
+            if [ -z "$mapping_pod" ] || [ -z "$mapping_container_id" ]; then
+                continue
             fi
-        fi
-        current_cgroup="$(dirname "$current_cgroup")"
-    done
-    if [ -z "$els_cpu_limit_cgroup_path" ]; then
-        echo "Could not find a finite CPU quota cgroup for ELS Pod ${els_pod}." >&2
-        exit 1
-    fi
+            mapping_container_cgroup="$(
+                find /host/sys/fs/cgroup -type d \
+                    -name "*${mapping_container_id}*" 2>/dev/null |
+                    head -n 1
+            )"
+            if [ -z "$mapping_container_cgroup" ]; then
+                echo \
+                    "Could not find the host cgroup for ELS container ${mapping_container_id}." \
+                    >&2
+                exit 1
+            fi
+
+            mapping_limit_cgroup=""
+            current_cgroup="$mapping_container_cgroup"
+            while [ "$current_cgroup" != "/host/sys/fs/cgroup" ] && \
+                [ "$current_cgroup" != "/" ]; do
+                if [ -r "${current_cgroup}/cpu.max" ]; then
+                    cpu_quota="$(
+                        awk '{ print $1 }' "${current_cgroup}/cpu.max"
+                    )"
+                    if [ -n "$cpu_quota" ] && [ "$cpu_quota" != "max" ]; then
+                        mapping_limit_cgroup="$current_cgroup"
+                        break
+                    fi
+                fi
+                current_cgroup="$(dirname "$current_cgroup")"
+            done
+            if [ -z "$mapping_limit_cgroup" ]; then
+                echo \
+                    "Could not find a finite CPU quota cgroup for ELS Pod ${mapping_pod}." \
+                    >&2
+                exit 1
+            fi
+            printf '%s|%s|%s|%s\n' \
+                "$mapping_pod" \
+                "$mapping_container_id" \
+                "$mapping_container_cgroup" \
+                "$mapping_limit_cgroup" \
+                >> "${els_cgroups_path}.partial"
+        done
 fi
+mv "${els_cgroups_path}.partial" "$els_cgroups_path"
+
+els_pod_count="$(awk 'END { print NR + 0 }' "$els_cgroups_path")"
+els_pod="$(
+    awk -F '|' '
+        {
+            if (NR > 1) {
+                printf ","
+            }
+            printf "%s", $1
+        }
+        END {
+            if (NR > 0) {
+                printf "\n"
+            }
+        }
+    ' "$els_cgroups_path"
+)"
+els_container_id="$(
+    awk -F '|' '
+        {
+            if (NR > 1) {
+                printf ","
+            }
+            printf "%s", $2
+        }
+        END {
+            if (NR > 0) {
+                printf "\n"
+            }
+        }
+    ' "$els_cgroups_path"
+)"
+els_container_cgroup_path="$(
+    awk -F '|' '
+        {
+            if (NR > 1) {
+                printf ","
+            }
+            printf "%s", $3
+        }
+        END {
+            if (NR > 0) {
+                printf "\n"
+            }
+        }
+    ' "$els_cgroups_path"
+)"
+els_cpu_limit_cgroup_path="$(
+    awk -F '|' '
+        {
+            if (NR > 1) {
+                printf ","
+            }
+            printf "%s", $4
+        }
+        END {
+            if (NR > 0) {
+                printf "\n"
+            }
+        }
+    ' "$els_cgroups_path"
+)"
+
+read_els_counters() {
+    aggregate_usage=0
+    aggregate_periods=0
+    aggregate_throttled_periods=0
+    aggregate_throttled_usec=0
+    aggregate_pressure_usec=0
+    if [ ! -s "$els_cgroups_path" ]; then
+        printf '%s\n' "-1 -1 -1 -1 -1"
+        return
+    fi
+    while IFS='|' read -r counter_pod counter_id counter_cgroup counter_limit; do
+        counter_usage="$(
+            read_named_value "${counter_cgroup}/cpu.stat" usage_usec
+        )"
+        counter_periods="$(
+            read_named_value "${counter_limit}/cpu.stat" nr_periods
+        )"
+        counter_throttled_periods="$(
+            read_named_value "${counter_limit}/cpu.stat" nr_throttled
+        )"
+        counter_throttled_usec="$(
+            read_named_value "${counter_limit}/cpu.stat" throttled_usec
+        )"
+        counter_pressure_usec="$(
+            read_psi_total "${counter_limit}/cpu.pressure" some
+        )"
+        aggregate_usage=$((aggregate_usage + ${counter_usage:-0}))
+        aggregate_periods=$((aggregate_periods + ${counter_periods:-0}))
+        aggregate_throttled_periods=$((
+            aggregate_throttled_periods + ${counter_throttled_periods:-0}
+        ))
+        aggregate_throttled_usec=$((
+            aggregate_throttled_usec + ${counter_throttled_usec:-0}
+        ))
+        aggregate_pressure_usec=$((
+            aggregate_pressure_usec + ${counter_pressure_usec:-0}
+        ))
+    done < "$els_cgroups_path"
+    printf '%s %s %s %s %s\n' \
+        "$aggregate_usage" \
+        "$aggregate_periods" \
+        "$aggregate_throttled_periods" \
+        "$aggregate_throttled_usec" \
+        "$aggregate_pressure_usec"
+}
 
 if [ ! -f "$metadata_path" ]; then
     {
@@ -161,12 +285,18 @@ if [ ! -f "$metadata_path" ]; then
             }' /host/proc/cpuinfo
         )"
         printf 'els_pod=%s\n' "$els_pod"
+        printf 'els_pod_count=%s\n' "$els_pod_count"
+        printf 'els_mapping_mode=all-pods-on-node\n'
         printf 'els_container_id=%s\n' "$els_container_id"
         printf 'els_container_cgroup=%s\n' "$els_container_cgroup_path"
         printf 'els_cpu_limit_cgroup=%s\n' "$els_cpu_limit_cgroup_path"
-        if [ -n "$els_cpu_limit_cgroup_path" ]; then
+        if [ -s "$els_cgroups_path" ]; then
             printf 'els_cpu_max=%s\n' "$(
-                cat "${els_cpu_limit_cgroup_path}/cpu.max"
+                while IFS='|' read -r metadata_pod metadata_id \
+                    metadata_cgroup metadata_limit; do
+                    tr '\n' ' ' < "${metadata_limit}/cpu.max"
+                    printf ';'
+                done < "$els_cgroups_path"
             )"
         fi
         printf 'target_sample_interval_seconds=1\n'
@@ -178,6 +308,7 @@ if [ ! -f "$samples_path" ]; then
         'observed_at_utc	uptime_seconds	cpu_user	cpu_nice	cpu_system	cpu_idle	cpu_iowait	cpu_irq	cpu_softirq	cpu_steal	procs_running	procs_blocked	load_1m	run_queue	cpu_pressure_some_usec	memory_pressure_some_usec	io_pressure_some_usec	softirq_net_rx	softirq_net_tx	softirq_timer	eth0_rx_bytes	eth0_rx_packets	eth0_rx_errors	eth0_rx_drops	eth0_tx_bytes	eth0_tx_packets	eth0_tx_errors	eth0_tx_drops	cilium_rx_bytes	cilium_rx_packets	cilium_rx_errors	cilium_rx_drops	cilium_tx_bytes	cilium_tx_packets	cilium_tx_errors	cilium_tx_drops	tcp_retrans_segs	tcp_in_errors	tcp_ext_listen_drops	tcp_ext_backlog_drops	tcp_ext_rcv_queue_drops	els_pod	els_cpu_usage_usec	els_cpu_periods	els_cpu_throttled_periods	els_cpu_throttled_usec	els_cpu_pressure_some_usec' \
         > "$samples_path"
 fi
+publish_evidence
 
 sample_count=0
 while :; do
@@ -249,32 +380,12 @@ while :; do
         read_protocol_value /host/proc/net/netstat TcpExt TCPRcvQDrop
     )"
 
-    els_cpu_usage="-1"
-    els_cpu_periods="-1"
-    els_cpu_throttled_periods="-1"
-    els_cpu_throttled_usec="-1"
-    els_cpu_pressure_some="-1"
-    if [ -n "$els_container_cgroup_path" ] && \
-        [ -r "${els_container_cgroup_path}/cpu.stat" ]; then
-        els_cpu_usage="$(
-            read_named_value "${els_container_cgroup_path}/cpu.stat" usage_usec
-        )"
-    fi
-    if [ -n "$els_cpu_limit_cgroup_path" ] && \
-        [ -r "${els_cpu_limit_cgroup_path}/cpu.stat" ]; then
-        els_cpu_periods="$(
-            read_named_value "${els_cpu_limit_cgroup_path}/cpu.stat" nr_periods
-        )"
-        els_cpu_throttled_periods="$(
-            read_named_value "${els_cpu_limit_cgroup_path}/cpu.stat" nr_throttled
-        )"
-        els_cpu_throttled_usec="$(
-            read_named_value "${els_cpu_limit_cgroup_path}/cpu.stat" throttled_usec
-        )"
-        els_cpu_pressure_some="$(
-            read_psi_total "${els_cpu_limit_cgroup_path}/cpu.pressure" some
-        )"
-    fi
+    set -- $(read_els_counters)
+    els_cpu_usage="${1:--1}"
+    els_cpu_periods="${2:--1}"
+    els_cpu_throttled_periods="${3:--1}"
+    els_cpu_throttled_usec="${4:--1}"
+    els_cpu_pressure_some="${5:--1}"
 
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$observed_at_utc" \

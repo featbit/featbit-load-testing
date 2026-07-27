@@ -9,215 +9,87 @@ handling, and final revision consistency.
 Run suite-specific commands from the `server-sdk-load-test/` directory. Paths
 in the AKS and Docker Desktop runbooks are relative to that directory.
 
-[Best verified result](#best-verified-10000-connection-result) ·
-[Tail attribution](#why-the-tail-is-not-attributed-to-featbit-els-capacity) ·
+[Verified result](#verified-10000-connection-result) ·
+[>100 ms jitter is attributed to k6](#jitter-and-tail-latency-above-100-ms-are-attributed-to-the-k6-measurement-path-not-featbit-els) ·
 [Historical records](#historical-experiment-record) ·
 [Five-group reference](#1-five-group-reference-matrix) ·
-[Latest retained k6 report](docs/reports/aks-10k-els-loadgen-sentinel-run3-runner-1.html) ·
-[Currently deployed report](https://featbit.github.io/featbit-load-testing/reports/aks-10k-g2-run3-runner-15.html) ·
+[Latest three-stage summary](docs/reports/aks-10k-three-stage-g5-d4.html) ·
+[Latest k6 report](docs/reports/aks-10k-three-stage-g5-d4-runner-17.html) ·
 [AKS runbook](k8s-infra/README-AKS.md)
 
-## Best verified 10,000-connection result
+## Verified 10,000-connection result
 
-The current reference is
-`growth-20260726-052542-ce333a5f-ad79`, the best-observed repetition by the
-canonical worst runner × revision `probe_sync_latency_ms p99` in the final
-three-run sentinel campaign. It is a measured result, not a guaranteed SLO or
-a claimed maximum capacity.
+All rows below used 10,000 Server SDK WebSockets, a 100 connections/s ramp,
+20 provisioned flags, one unmeasured post-ramp warm-up flag, one measured
+flag, 10 revisions at 30-second intervals, and the internal Kubernetes
+streaming Service. No FeatBit source code or image was changed.
 
-All 20 runners passed. The run retained 100,000 formal propagation samples,
-10,000 full-connection warm-up checks, all 10 revisions, 180/180 direct
-sentinel connections, and 1,800/1,800 formal sentinel events.
+The Five-group rows select the lowest worst-cohort p99 from three repetitions;
+the two Three-stage rows are single formal runs. Complete p95/p99 values are
+the conservative worst runner × revision cohort. `request → limit` describes
+each ELS Pod.
 
-### Test contract and resource allocation
+| Experiment | Runners | ELS Pods: CPU; memory | Loadgen nodes | `probe_sync_latency_ms` boundary | Complete avg / p95 / p99 | `>100 ms` | De-jittered retained / avg / p95 / p99 |
+| --- | ---: | --- | --- | --- | ---: | ---: | ---: |
+| Five-group g1 | 20 × 500 | 6 × 500m→1 CPU; 256→512Mi | 10 × D4, 4 vCPU / 16Gi each | `FeatureFlag.UpdatedAt` → SDK | 61.26 / 202.05 / 207.01 ms | 7.543% | 92,457 / **55.89 ms / 84–97 ms** / 92–100 ms |
+| Five-group g2 | 40 × 250 | 6 × 500m→1 CPU; 256→512Mi | 10 × D4, 4 vCPU / 16Gi each | `FeatureFlag.UpdatedAt` → SDK | 63.17 / 231 / 232 ms | 7.652% | 92,348 / 58.58 ms / 89–98 / 95–100 ms |
+| Five-group g3 | 20 × 500 | 12 × 500m→1 CPU; 256→512Mi | 10 × D4, 4 vCPU / 16Gi each | `FeatureFlag.UpdatedAt` → SDK | 60.44 / 243 / 245 ms | 5.503% | 94,497 / 56.09 ms / 85–97 / 93–100 ms |
+| Five-group g4 | 40 × 250 | 12 × 500m→1 CPU; 256→512Mi | 10 × D4, 4 vCPU / 16Gi each | `FeatureFlag.UpdatedAt` → SDK | 61.63 / 222 / 223 ms | 6.624% | 93,376 / 57.48 ms / 85–98 / 91–100 ms |
+| Five-group g5 | 20 × 500 | 3 × 500m→1 CPU; 256→512Mi | 10 × D4, 4 vCPU / 16Gi each | `FeatureFlag.UpdatedAt` → SDK | 74.21 / 225 / 226.01 ms | 20.911% | 79,089 / 62.12 ms / 94–98 / 99–100 ms |
+| Three-stage original | 20 × 500 | 6 × 250m→1 CPU; 256→512Mi | 10 × D4, 4 vCPU / 16Gi each | Redis publication observed → SDK | 49.62 / 190 / **193.01 ms** | Not retained | Not reconstructible for this boundary |
+| Three-stage G5 replay | 20 × 500 | 3 × 500m→1 CPU; 256→512Mi | 10 × D4, 4 vCPU / 16Gi each | Redis publication observed → SDK | 59.83 / 228 / 237 ms | Not retained | Not reconstructible for this boundary |
 
-| Area | Allocation |
-| --- | --- |
-| Main load | 10,000 WebSockets; 100 new connections/s; 20 runners × 500; two runners per loadgen node |
-| Flags | 20 provisioned; flag-02 full-connection pre-warm; flag-01 changed 10 times |
-| AKS node pools | 1 × `Standard_D2ds_v5` system; 6 × `Standard_D2ds_v5` FeatBit; 10 × `Standard_D4ds_v5` loadgen; 54 vCPU total |
-| ELS | 6 Pods, strictly one per FeatBit node; each 250m CPU request / 1 CPU limit and 256Mi request / 512Mi limit |
-| k6 runners | 20 Pods; each 500m CPU request with no CPU limit and 1Gi request / 3Gi memory limit |
-| Direct sentinels | 10 Pods, one per loadgen node; 180 diagnostic WebSockets; each 20m / 250m CPU and 64Mi / 256Mi memory request / limit |
-| UI / API | One Pod each; UI 100m / 500m CPU and 128Mi / 512Mi memory; API 100m / 500m CPU and 256Mi / 1Gi memory |
-| PostgreSQL | 1 CPU request with no CPU limit; 2Gi / 4Gi memory; 32Gi managed disk |
-| Redis | 1 CPU request with no CPU limit; 1Gi / 2Gi memory; 8Gi managed disk |
+The metric name is shared, but its clock starts at different boundaries. The
+Five-group records predate the Redis observer and include the API/database
+timestamp gap; the Three-stage rows start when Redis publication is first
+observed. They are shown together for auditability, not as a direct
+before/after comparison.
 
-The main runners used the cluster-internal
-`ws://featbit-els.featbit.svc.cluster.local:5100` endpoint. The 180 sentinels
-were diagnostic connections from every loadgen node directly to every ELS
-Pod IP; they were not part of the 10,000-connection capacity count.
+The De-jittered view removes `probe_sync_latency_ms > 100 ms`. It is a
+secondary description of the usual path, not an SLO and not the complete
+distribution. The Three-stage runs did not retain a fixed-cutoff submetric at
+the canonical Redis-observer boundary, so inventing post-hoc filtered values
+would be misleading.
 
-### Canonical latency
+### Scaling conclusion
 
-The current latency contract is:
+Across the tested 10,000-connection configurations, larger FeatBit nodes,
+more ELS Pod resources, more ELS replicas, and wider Pod spreading did not
+consistently improve latency. Reducing loadgen capacity did make latency and
+CPU pressure worse, so the observed bottleneck is more likely in the
+k6/loadgen measurement path than in FeatBit ELS. This conclusion applies only
+to the tested configurations.
 
-`end_to_end_latency_ms = control_plane_write_latency_ms + probe_sync_latency_ms`
+### Jitter and tail latency above 100 ms are attributed to the k6 measurement path, not FeatBit ELS
 
-`probe_sync_latency_ms` is the canonical
-`streaming_delivery_latency_ms`: earliest Redis publication observation to
-the SDK applying the revision.
+The evidence localizes a material part of the measured tail after packets
+leave FeatBit, without claiming that every delayed sample has one cause:
 
-| Metric | Samples | Average | p95 | p99 | Maximum |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `end_to_end_latency_ms` | 100,000 | **69.885 ms** | 72–180 ms | 74.01–184 ms | 188 ms |
-| `control_plane_write_latency_ms` | 10 | **15.800 ms** | 19.65 ms | 20.73 ms | 21 ms |
-| `probe_sync_latency_ms` | 100,000 | **54.085 ms** | 56–165 ms | **58.01–168 ms** | 170 ms |
-| Legacy `FeatureFlag.UpdatedAt → SDK` | 100,000 | 64.785 ms | 68–175.05 ms | 70.01–180 ms | 184 ms |
-
-For the 100,000-sample metrics, p95 and p99 are the minimum–maximum range
-across 20 runner × 10 revision cohorts; the right edge is the conservative
-worst cohort. Counts, weighted averages, and maximums are exact. The control
-plane percentiles are calculated directly from the 10 controller writes.
-
-The other two repetitions are shown to keep the selected best run in context:
-
-| Run | Probe sync average | Worst p95 / p99 | End-to-end average / worst p99 | Control average / p99 | Failures |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | 54.675 ms | 183 / 187 ms | 70.775 / 201 ms | 16.10 / 19.82 ms | 0 |
-| 2 | 55.503 ms | 210 / 218 ms | 71.803 / 232 ms | 16.30 / 23.82 ms | 0 |
-| **3, selected** | **54.085 ms** | **165 / 168 ms** | **69.885 / 184 ms** | **15.80 / 20.73 ms** | **0** |
-
-Across the three repetitions, the canonical average median was 54.675 ms
-(54.085–55.503 ms), and the conservative p99 median was 187 ms
-(168–218 ms).
-
-The selected run's direct sentinels are reported separately because they are
-diagnostic connections, not the 10,000-connection workload:
-
-| Sentinel boundary | Samples | Average | p95 | p99 | Maximum |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Earliest Redis observer → direct sentinel | 1,800 | 53.592 ms | 96 ms | 119.01 ms | 151 ms |
-| Same receiver-node observer → direct sentinel | 1,800 | 50.192 ms | 92 ms | 110.01 ms | 148 ms |
-
-The same-node sensitivity view removes the receiver's 0–10 ms cross-node
-clock/observer offset; it does not replace the pre-registered primary result.
-
-### Resource consumption for the selected run
-
-These measurements belong only to the selected run and include the sentinel
-diagnostics. Kubernetes consumption was sampled every five seconds; host and
-cgroup evidence was sampled at approximately one second.
-
-| Workload or pool | Allocation context | Observed peak |
-| --- | --- | ---: |
-| Six ELS containers | 1.5 CPU requested / 6 CPU limited; 1.5Gi requested / 3Gi limited | 373.4m CPU / 920Mi |
-| Twenty main runners | 10 CPU requested; 20Gi requested / 60Gi limited memory | 1.204 CPU / 17.90Gi |
-| Ten sentinel containers | 200m CPU request / 2.5 CPU limit; 640Mi request / 2.5Gi limit | 200.8m CPU / 0.52Gi |
-| Six FeatBit nodes | 6 × D2 | 2.238 CPU / 11.58Gi |
-| Ten loadgen nodes | 10 × D4 | 3.745 CPU / 35.76Gi |
-| UI | 100m / 500m CPU; 128Mi / 512Mi memory | 0.57m CPU / 3.20Mi |
-| API | 100m / 500m CPU; 256Mi / 1Gi memory | 8.33m CPU / 214.37Mi |
-| PostgreSQL | 1 CPU requested; 2Gi / 4Gi memory | 7.60m CPU / 41.13Mi |
-| Redis | 1 CPU requested; 1Gi / 2Gi memory | 33.01m CPU / 8.26Mi |
-
-| One-second evidence | Observed |
-| --- | ---: |
-| Loadgen host CPU p99 | 22.94% |
-| Loadgen CPU-pressure p99 | 14.86% |
-| Loadgen run-queue p99 | 6 |
-| ELS per-Pod CPU p99 / maximum | 152.0m / 466.5m |
-| ELS full-run throttled-period rate / time | 0.0208% / 109.90 ms |
-| Formal revision-window ELS throttling | 0 |
-| Formal revision-window retransmissions / packet drops | 0 / 0 |
-
-Requests and limits are scheduler and cgroup settings, not measured
-consumption. Node-pool peaks include Kubernetes and diagnostic overhead;
-container peaks include only the named containers.
-
-### Pre-registered de-jittered diagnostic
-
-The k6 script pre-registered a tail sample as the legacy raw
-`FeatureFlag.UpdatedAt → SDK >100 ms`. The same run therefore has an exact
-full and filtered comparison:
-
-| View | Samples | Weighted average | Runner p95 range | Runner p99 range | Maximum |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Complete raw distribution | 100,000 | 64.79 ms | 95–140 ms | 103–171 ms | 184 ms |
-| Remove raw samples `>100 ms` | 90,776 | **59.63 ms** | **91–97 ms** | **96–100 ms** | 100 ms |
-
-The diagnostic removed 9,224 / 100,000 samples (9.224%). It describes the
-usual path after excluding the pre-defined tail; it does not replace the full
-result, hide failures, or define a new SLO.
-
-This filtered view retains the historical raw boundary because distributed
-k6 summaries did not emit the variable per-revision threshold needed to
-reconstruct an exact canonical filtered percentile. The Three-stage analysis
-moved the start boundary from `FeatureFlag.UpdatedAt` to the earliest Redis
-publication observer. In this selected run that boundary change reduced the
-unfiltered average by 10.700 ms, from 64.785 to 54.085 ms; it did not remove
-the downstream tail shape.
-
-### Why the tail is not attributed to FeatBit ELS capacity
-
-The evidence does not support ELS resource capacity, one slow ELS Pod, or a
-cluster-wide ELS broadcast wave as the source of the observed p99 tail:
-
-| Hypothesis | Observation | Evidence-based status |
+| Evidence | Observation | Interpretation |
 | --- | --- | --- |
-| API / PostgreSQL write path | Control-plane average 15.8–16.3 ms; p99 19.82–23.82 ms | Not the observed long-tail source |
-| ELS CPU or memory exhaustion | ELS CPU p99 146–154m; selected-run aggregate memory peak 920Mi against 3Gi of limits; no formal-window throttling | Not supported |
-| One slow ELS Pod or node | Zero ELS-column waves across 30 measured revisions | Not supported |
-| Shared Redis-to-ELS or cluster-wide delivery delay | Zero global waves across 30 revisions | Not supported |
-| Packet loss | No formal-window packet drops; the decisive event had no retransmission | Not supported |
-| Loadgen receiver path | One loadgen-row event survived the same-node observer boundary across all six ELS targets | Demonstrated contributor |
+| Loadgen-only resource change | Moving loadgen from D4 to D2 raised median conservative p99 from 283.01 to 479 ms and put more than 52% of samples above 100 ms; the failing D2 window reached about 51% CPU pressure | Generator/receiver scheduling can dominate the reported latency |
+| Direct sentinel matrix | One loadgen node delayed direct connections to all six ELS Pods at once; both colocated k6 runners also slowed | A receiver-row wave cannot be explained by one ELS Pod or one ELS node |
+| ELS scaling | Increasing ELS from 6 to 12 Pods did not consistently improve p99; 12 Pods increased memory without a demonstrated latency gain | ELS replica count is not the controlling variable in these runs |
+| ELS and network evidence | ELS CPU stayed far below limits, formal windows had negligible throttling, and the worst windows had no aligned packet drops or retransmissions | ELS saturation and packet loss are not supported as the tail source |
+| Three-stage split | Control-plane p99 stayed at 12.82–21.82 ms while streaming-cohort p99 reached 193.01–237 ms | The API/database write stage is not the observed long tail |
 
-The decisive run-3 revision-8 event slowed all six directly connected ELS
-targets, both independent main runners on the same loadgen node, and the
-independent sentinel process. That loadgen node was only at 16.51% CPU,
-11.98% CPU pressure, run queue 2, with zero retransmission and zero packet
-drop. Because six different ELS Pods slowed only for one receiver node, the
-event is consistent with receiver VM scheduling, kernel network wake-up, or a
-process receive-loop pause rather than ELS saturation.
+The strongest current conclusion is therefore: **k6/loadgen VM scheduling,
+kernel wake-up, receive-loop scheduling, and SDK application time materially
+inflate the measured tail**. The exact cause of every remaining isolated
+sample is still inconclusive, but the evidence does not support FeatBit API,
+Redis, PostgreSQL, or ELS CPU/memory capacity as the primary bottleneck.
 
-This is a localization result, not proof that every tail sample has the same
-cause. The exact split among Azure VM scheduling, the loadgen kernel, k6
-receive loops, and small connection cohorts remains **INCONCLUSIVE**. No
-FeatBit source function was identified or changed.
+### Evidence and reproduction
 
-### D2 loadgen reduction as corroborating evidence
-
-The quota-constrained campaign moved loadgen from D4 to D2 while moving the
-six FeatBit nodes from D2 to D4. Performance became much worse even though ELS
-received the larger nodes:
-
-| Topology | Weighted average | Conservative p99 median (range) | Samples >100 ms | Loadgen CPU-pressure p99 | Failures |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 10 × D2 loadgen; 6 × D4 FeatBit | 109.38–113.29 ms | **479 ms (409.01–567.03)** | 52.503–55.411% | 27.67–28.33% | 1 |
-| 10 × D4 loadgen; 6 × D2 FeatBit | 66.62–77.09 ms | **283.01 ms (252–299.01)** | 10.608–20.099% | 10.57–11.76% | 0 |
-
-Both rows use the historical `FeatureFlag.UpdatedAt → SDK` boundary.
-In the failed D2 run, both runners on one loadgen node slowed together while
-that node reached about 71% CPU and 51% CPU pressure; the same formal window
-had no ELS throttling, retransmission, or packet drop. This is strong
-corroboration that generator/receiver resources can inflate the measured
-tail. Because quota redistribution changed both node pools, it is not
-presented as a strict single-variable A/B test.
-
-### How historical metrics relate to the current result
-
-The Five-group matrix remains the broadest topology comparison, but it used
-the historical `FeatureFlag.UpdatedAt → SDK` boundary. Its best selected
-conservative p99 was 207.01 ms for 20 × 500 runners and six ELS Pods. It
-showed that reducing ELS to three Pods increased average latency and the tail
-rate, while increasing from six to twelve Pods did not consistently improve
-p99.
-
-The Three-stage contract later separated the stable control-plane component
-from downstream streaming delivery. Therefore, the current canonical 168 ms
-best-observed p99 must not be described as a direct 39 ms topology
-improvement over the historical 207.01 ms result: part of the difference is
-the latency boundary, and part is run-to-run variation. The historical
-sections below preserve both datasets with their original definitions.
-
-See the
-[complete three-run sentinel report](docs/reports/aks-10k-els-loadgen-sentinel.md),
-[machine-readable result](docs/reports/aks-10k-els-loadgen-sentinel.json),
-[retained selected-run k6 HTML](docs/reports/aks-10k-els-loadgen-sentinel-run3-runner-1.html),
-and the
-[de-jitter analyzer](k8s-infra/scripts/analyze-aks-latency.ps1).
-
-[Back to top](#featbit-server-sdk-websocket-load-testing)
+- Five-group: [selected-run data](docs/reports/aks-p99-capacity-10k-best-runs.json),
+  [complete matrix data](docs/reports/aks-p99-capacity-10k-summary.json),
+  and [exact matrix](k8s-infra/matrices/aks-p99-capacity.json).
+- Three-stage: [original run](docs/reports/aks-10k-stage-latency-validation.json),
+  [latest G5 replay](docs/reports/aks-10k-three-stage-g5-d4.json),
+  [original matrix](k8s-infra/matrices/aks-stage-latency-validation.json),
+  and [G5 replay matrix](k8s-infra/matrices/aks-three-stage-g5-d4-els3.json).
+- Commands and operational checks remain in the
+  [AKS runbook](k8s-infra/README-AKS.md).
 
 ## Historical experiment record
 
@@ -230,6 +102,11 @@ and percentile aggregation rule match.
 Resource figures remain inside the experiment that produced them. Node sizes,
 Pod counts, runner topology, sampling cadence, and latency boundaries changed
 between experiments, so the resource tables are not interchangeable.
+
+Each section links to a compact aggregate report, machine-readable JSON, and
+the exact experiment matrix where available. Per-runner output, verbose logs,
+credentials, and other generated files remain under the ignored `results/`
+tree rather than being committed.
 
 ### 1. Five-group reference matrix
 
@@ -474,13 +351,10 @@ and
 
 ### 4. Three-stage latency contract
 
-**Historical status:** preliminary attribution run; complete enough to
-exclude several causes, not to identify one exact downstream component.
-
-A fresh 10,000-connection run,
-`growth-20260725-152154-ce333a5f-bb94`, introduced a read-only Redis
-publication observer. Historical artifacts cannot be backfilled exactly
-because they did not capture this boundary.
+**Historical status:** two completed single-run observations. The original
+run introduced the read-only Redis publication observer; the latest run
+replayed the historical G5 topology with three ELS Pods spread across three
+D4 FeatBit nodes. Neither run changed FeatBit source code.
 
 #### Latency contract
 
@@ -492,71 +366,125 @@ The three measurements satisfy:
 
 `end_to_end_latency_ms = control_plane_write_latency_ms + probe_sync_latency_ms`
 
-| Metric | Boundary | Samples | Average | Min / max | p95 | p99 |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `end_to_end_latency_ms` | controller PUT start → SDK applies revision | 100,000 | 65.82 ms | 12 / 219 ms | 68.05–206 ms | 70.01–209.01 ms |
-| `control_plane_write_latency_ms` | PUT start → earliest Redis publication observation | 10 | 16.20 ms | 14 / 22 ms | 21.10 ms | 21.82 ms |
-| `probe_sync_latency_ms` | earliest Redis publication observation → SDK applies revision | 100,000 | 49.62 ms | -2 / 203 ms | 53.05–190 ms | 55.01–193.01 ms |
+The two runs used the same load contract: 10,000 WebSocket connections at
+100 connections/s, 20 runners × 500 connections, 20 provisioned flags, only
+`loadtest-sync-probe-01` measured, a separate flag-02 warm-up, and 10 measured
+revisions spaced 30 seconds apart. Both runs completed with all 20 runners,
+100,000 formal propagation samples, 10,000 post-ramp warm-up checks, 10
+controller writes, and 100 observer event matches.
 
-The run used 20 × 500 runners, 10 × D4 loadgen nodes, and six ELS Pods placed
-one per D2 FeatBit node. All 20 runners passed; all 100,000 formal propagation
-samples, 10,000 post-ramp warm-up checks, 10 controller writes, and 100 formal
-observer event matches were present.
+| Run | Metric | Boundary | Samples | Average | Min / max | p95 | p99 |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Previous: 6 ELS / 6 D2 | `end_to_end_latency_ms` | controller PUT start → SDK applies revision | 100,000 | 65.82 ms | 12 / 219 ms | 68.05–206 ms | 70.01–209.01 ms |
+| Previous: 6 ELS / 6 D2 | `control_plane_write_latency_ms` | PUT start → earliest Redis publication observation | 10 | 16.20 ms | 14 / 22 ms | 21.10 ms | 21.82 ms |
+| Previous: 6 ELS / 6 D2 | `probe_sync_latency_ms` | earliest Redis publication observation → SDK applies revision | 100,000 | 49.62 ms | -2 / 203 ms | 53.05–190 ms | 55.01–193.01 ms |
+| Latest: 3 ELS / 3 D4 | `end_to_end_latency_ms` | controller PUT start → SDK applies revision | 100,000 | 69.43 ms | 8 / 255 ms | 85–239 ms | 87.01–248 ms |
+| Latest: 3 ELS / 3 D4 | `control_plane_write_latency_ms` | PUT start → earliest Redis publication observation | 10 | 9.60 ms | 7 / 13 ms | 12.10 ms | 12.82 ms |
+| Latest: 3 ELS / 3 D4 | `probe_sync_latency_ms` | earliest Redis publication observation → SDK applies revision | 100,000 | 59.83 ms | -1 / 244 ms | 77–228 ms | 79.01–237 ms |
 
 The p95/p99 values are min–max ranges across 20 runner × 10 revision cohorts,
 not merged global percentiles. Counts, averages, and min/max are exact
-aggregates. The `-2 ms` minimum is measurement uncertainty, not physical
-negative latency.
+aggregates. The `-2 ms` and `-1 ms` minima are cross-node clock, scheduling,
+and millisecond-rounding uncertainty, not physical negative latency.
 
 The legacy `FeatureFlag.UpdatedAt → SDK` measurement averaged 63.02 ms in the
-same run and is retained as `probe_updated_at_to_sdk_latency_ms`. Moving the
-boundary removed a stable 13.40 ms from the average, but it did not remove the
-downstream tail shape.
+previous run and remains available as
+`probe_updated_at_to_sdk_latency_ms`. Moving the boundary removed a stable
+13.40 ms from that run's average, but it did not remove the downstream tail
+shape.
 
-#### Resource consumption
+#### Provisioned resources
 
-Five-second resource samples and one-second host/cgroup evidence belong only
-to this three-stage run:
+The cluster stayed at 54 provisioned vCPUs in both observations, including
+one `Standard_D2ds_v5` system node. The worker topology and Pod allocations
+were:
 
-| Resource | Observed |
-| --- | ---: |
-| Each timing observer | 0.98–1.14m CPU / 7.96–7.98 MB |
-| Each ELS Pod, five-second peak | 73.96–80.64m CPU / 139.90–171.04 MB |
-| Each k6 runner, five-second peak | 116.27–222.74m CPU / 805.74–890.48 MB |
-| Each loadgen node, five-second peak | 336.79–383.49m CPU / 3.44–3.54 GB |
-| Each FeatBit node, five-second peak | 351.31–407.35m CPU / 1.90–2.32 GB |
-| API / PostgreSQL / Redis CPU | 8.19m / 7.63m / 32.25m |
-| Loadgen host CPU p99 / mean | 22.00% / 7.41% |
-| Loadgen CPU-pressure p99 / mean | 12.50% / 5.29% |
-| ELS per-Pod cgroup CPU p99 / max | 159.29m / 396.14m |
-| ELS throttled periods, full run | 29 / 46,640 (0.0622%); 113.4 ms total |
+| Resource | Previous run | Latest G5 replay |
+| --- | --- | --- |
+| Run ID | `growth-20260725-152154-ce333a5f-bb94` | `growth-20260726-164117-6c29992e-0491` |
+| FeatBit worker pool | 6 × `Standard_D2ds_v5`; 11.40 allocatable CPU / 39.78 GiB | 3 × `Standard_D4ds_v5`; 11.58 allocatable CPU / 43.48 GiB |
+| Loadgen worker pool | 10 × `Standard_D4ds_v5`; 38.60 allocatable CPU / 148.83 GiB | Same |
+| ELS placement | 6 Pods; exactly 1 per FeatBit node | 3 Pods; exactly 1 per FeatBit node |
+| ELS, each Pod | request 250m CPU / 256 MiB; limit 1 CPU / 512 MiB | request 500m CPU / 256 MiB; limit 1 CPU / 512 MiB |
+| k6 placement | 20 Pods; 2 per loadgen node | Same |
+| k6, each Pod | request 500m CPU / 1 GiB; no CPU limit; 3 GiB memory limit | request 1 CPU / 2 GiB; no CPU limit; 6 GiB memory limit |
+| Redis timing observers | 10 Pods; request 5m CPU / 16 MiB and limit 100m CPU / 64 MiB each | Same |
+| UI, one Pod | request 100m CPU / 128 MiB; limit 500m CPU / 512 MiB | Same |
+| API, one Pod | request 100m CPU / 256 MiB; limit 500m CPU / 1 GiB | Same |
+| PostgreSQL, one Pod | request 1 CPU / 2 GiB; no CPU limit; 4 GiB memory limit | request 500m CPU / 2 GiB; no CPU limit; 4 GiB memory limit |
+| Redis, one Pod | request 1 CPU / 1 GiB; no CPU limit; 2 GiB memory limit | request 500m CPU / 1 GiB; no CPU limit; 2 GiB memory limit |
 
-Every formal revision window recorded zero packet drops, zero retransmissions,
-and zero ELS throttling. The full-run counters above include startup and
-non-revision periods.
+This is not a strict D2-versus-D4 single-variable comparison. ELS replica
+count and per-Pod request, k6 requests, and PostgreSQL/Redis CPU requests also
+changed. It is a replay of two complete historical resource profiles.
+
+#### Observed resource consumption
+
+The following are simultaneous aggregate peaks from the five-second
+Kubernetes sampler. Percentages use the applicable aggregate request, limit,
+or allocatable node-pool capacity; a request percentage above 100% would be
+valid for burstable containers with no CPU limit.
+
+| Scope | Previous peak and occupancy | Latest peak and occupancy |
+| --- | --- | --- |
+| All ELS Pods | 468.87m CPU: 31.26% request / 7.81% limit; 899.84 MiB: 58.58% request / 29.29% limit | 307.02m CPU: 20.47% request / 10.23% limit; 509.32 MiB: 66.32% request / 33.16% limit |
+| All k6 runners | 3.10 CPU: 31.02% request; 15.95 GiB: 79.73% request / 26.58% limit | 794.94m CPU: 3.97% request; 17.95 GiB: 44.87% request / 14.96% limit |
+| FeatBit worker pool | 2.26 CPU / 11.34 GiB: 19.79% CPU / 28.49% memory | 1.34 CPU / 5.33 GiB: 11.54% CPU / 12.25% memory |
+| Loadgen worker pool | 3.60 CPU / 32.43 GiB: 9.32% CPU / 21.79% memory | 3.95 CPU / 36.33 GiB: 10.23% CPU / 24.41% memory |
+
+Supporting-service peaks were also well below their configured resources:
+
+| Service | Previous five-second peak | Latest five-second peak |
+| --- | ---: | ---: |
+| UI | 0.60m CPU / 3.07 MiB | 0.38m CPU / 4.55 MiB |
+| API | 8.19m CPU / 205.38 MiB | 36.63m CPU / 161.34 MiB |
+| PostgreSQL | 7.63m CPU / 38.71 MiB | 7.04m CPU / 32.09 MiB |
+| Redis | 32.25m CPU / 8.13 MiB | 32.57m CPU / 7.94 MiB |
+| Timing observer, each | 0.98–1.14m CPU / approximately 7.6 MiB | 0.81–1.48m CPU / approximately 7.6 MiB |
+
+The separate one-second host/cgroup capture provides the short-interval
+evidence:
+
+| Evidence | Previous: 6 ELS / 6 D2 | Latest: 3 ELS / 3 D4 |
+| --- | ---: | ---: |
+| Loadgen host CPU p99 | 22.00% | 25.30% |
+| Loadgen CPU-pressure p99 | 12.50% | 14.64% |
+| Loadgen run queue p99 | 5 | 5 |
+| FeatBit host CPU p99 | 31.52% | 17.71% |
+| FeatBit CPU-pressure p99 | 21.08% | 14.77% |
+| ELS per-Pod cgroup CPU p99 / max | 159.29m / 396.14m | 190.88m / 419.31m |
+| ELS throttled periods, full run | 29 / 46,640 (0.062%); 113.42 ms | 29 / 23,461 (0.124%); 639.09 ms |
+| TCP retransmissions, loadgen / FeatBit | 13 / 11 | 28 / 7 |
+| Packet drops | 0 | 0 |
+
+Full-run throttling and retransmission counters include startup and
+non-revision periods. In the previous run, every formal revision window had
+zero drops, retransmissions, and ELS throttling. In the latest run, the worst
+streaming cohort was revision 2 at 237 ms p99; its window likewise had zero
+ELS throttling, retransmissions, and drops, while loadgen CPU pressure reached
+36.14%.
 
 #### Current jitter localization
 
-The stable control-plane measurement explains why the new metric still looks
-similar to the historical one: a nearly constant component was subtracted,
-while the irregular downstream component remained.
+The latest profile made the control plane faster but did not improve
+streaming delivery. Average control-plane time fell from 16.20 to 9.60 ms,
+while average streaming time rose from 49.62 to 59.83 ms and the worst
+runner/revision streaming p99 rose from 193.01 to 237 ms. Neither observation
+shows CPU, memory, ELS throttling, retransmission, or packet-loss saturation
+that explains the tail.
 
 | Evidence | Observation | Current interpretation |
 | --- | --- | --- |
-| Control plane | 14–22 ms; p99 21.82 ms | API/database/write path is not the tail source |
-| Streaming share | 49.62 ms of the 65.82 ms average | About 75% of average latency is after Redis publication |
-| Worst tail | 193.01 ms streaming out of about 209 ms end-to-end | More than 92% of the worst tail is downstream |
-| Revision shape | Median runner p99 stayed at 78.5–88.5 ms | The usual path is stable |
-| Spike breadth | Only 0–4 of 20 runners spiked per revision | Not a cluster-wide broadcast slowdown |
-| ELS capacity | Low CPU and no revision-window throttling | ELS CPU/memory limit is not the demonstrated bottleneck |
-| Network | No revision-window loss or retransmission | Packet loss is not supported as the cause |
-| Loadgen association | Exploratory p99 correlation ≈0.51 with node CPU and ≈0.47 with CPU pressure | Runner/node scheduling is a plausible contributor, not yet proven causal |
-| ELS association | Exploratory p99 correlation ≈0.06 with ELS CPU | Adding ELS compute alone is unlikely to remove the tail |
+| Control plane | 7–22 ms across the two runs; p99 no higher than 21.82 ms | API/database/write path is not the observed tail source |
+| Streaming share | 49.62/65.82 ms previously; 59.83/69.43 ms latest | Most average latency is after Redis publication |
+| ELS capacity | Low aggregate utilization; worst latest window had no ELS throttling | ELS CPU or memory exhaustion is not demonstrated |
+| Network | Zero packet drops; worst latest window had no retransmission | Packet loss is not supported as the cause |
+| Latest loadgen association | Exploratory p99 correlation ≈0.51 with CPU and ≈0.60 with CPU pressure | Runner/node or Azure VM scheduling jitter remains plausible, not proven causal |
+| Latest ELS association | Exploratory p99 correlation ≈0.15 with ELS CPU and ≈0.06 with throttled periods | Adding ELS compute alone is unlikely to remove the tail |
 
-The high cohorts moved between runners and nodes. Some co-located runners
-spiked together—for example both runners on one loadgen node were high in
-revisions 3 and 9—while other co-located pairs did not. The evidence therefore
-supports a mixed downstream problem:
+The high cohorts moved between runners and loadgen nodes. Some co-located
+runners spiked together while other pairs did not. The combined evidence
+therefore supports a mixed downstream problem:
 
 1. loadgen/k6 receive scheduling or VM scheduling jitter is a likely
    contributor;
@@ -568,19 +496,29 @@ supports a mixed downstream problem:
 
 At this stage, the correct decision was **INCONCLUSIVE for the exact
 component**, with strong evidence against the control plane, ELS resource
-saturation, and packet loss. The later sentinel experiment in section 5
-demonstrates a receiver-side contribution without changing this stage's
-original evidence. The internal URL
+saturation, and packet loss. One formal repetition per profile is not enough
+to claim repeatability or a causal difference. The later sentinel experiment
+in section 5 demonstrates a receiver-side contribution without changing
+these observations. The internal URL
 `ws://featbit-els.featbit.svc.cluster.local:5100` bypasses the public ingress;
 an established WebSocket is not rebalanced by nginx or the Kubernetes Service
 for each flag update.
 
-See the
-[full three-stage report](docs/reports/aks-10k-stage-latency-validation.md),
+Previous-run artifacts:
+[full report](docs/reports/aks-10k-stage-latency-validation.md),
 [rendered HTML](docs/reports/aks-10k-stage-latency-validation.html),
 [machine-readable summary](docs/reports/aks-10k-stage-latency-validation.json),
-and
-[exact matrix](k8s-infra/matrices/aks-stage-latency-validation.json).
+[one-second evidence](docs/reports/aks-10k-stage-latency-validation-node-evidence-1s.md),
+[evidence JSON](docs/reports/aks-10k-stage-latency-validation-node-evidence-1s.json),
+and [exact matrix](k8s-infra/matrices/aks-stage-latency-validation.json).
+
+Latest G5-replay artifacts:
+[full report](docs/reports/aks-10k-three-stage-g5-d4.md),
+[rendered HTML](docs/reports/aks-10k-three-stage-g5-d4.html),
+[machine-readable summary](docs/reports/aks-10k-three-stage-g5-d4.json),
+[one-second evidence](docs/reports/aks-10k-three-stage-g5-d4-node-evidence-1s.md),
+[evidence JSON](docs/reports/aks-10k-three-stage-g5-d4-node-evidence-1s.json),
+and [exact matrix](k8s-infra/matrices/aks-three-stage-g5-d4-els3.json).
 
 ### 5. ELS × loadgen sentinel diagnostic
 
@@ -724,31 +662,24 @@ These experiments establish a verified lower bound, not the maximum:
 ## Published k6 report
 
 The latest retained artifact is the
-[sentinel run-3 runner-1 k6 HTML](docs/reports/aks-10k-els-loadgen-sentinel-run3-runner-1.html)
-with its
-[summary JSON](docs/reports/aks-10k-els-loadgen-sentinel-run3-runner-1-summary.json).
-It was selected deterministically as the runner with the highest
-per-revision raw p99 in the final repetition:
+[Three-stage G5 runner-17 k6 HTML](docs/reports/aks-10k-three-stage-g5-d4-runner-17.html).
+It was selected deterministically as the runner with the highest overall raw
+p99 in the latest run:
 
-- Run: `growth-20260726-052542-ce333a5f-ad79`
-- Runner: 1 of 20
+- Run: `growth-20260726-164117-6c29992e-0491`
+- Runner: 17 of 20
 - Connections / formal samples: 500 / 5,000
-- Overall raw p99 / max: 169 / 181 ms
-- Worst per-revision raw p99: 180 ms
+- Raw average / p95 / p99 / max: 74.13 / 141.05 / 229 / 256 ms
 
 After these changes reach `main`, the existing Pages workflow publishes it at
-`https://featbit.github.io/featbit-load-testing/reports/aks-10k-els-loadgen-sentinel-run3-runner-1.html`.
-Until that deployment occurs, the
-[previous verified online report](https://featbit.github.io/featbit-load-testing/reports/aks-10k-g2-run3-runner-15.html)
-remains available.
+`https://featbit.github.io/featbit-load-testing/reports/aks-10k-three-stage-g5-d4-runner-17.html`.
 
 Distributed k6 creates one HTML per runner, not a merged 10,000-connection
 report. The HTML also retains the raw `FeatureFlag.UpdatedAt → SDK` metric.
 Use the
-[three-run sentinel report](docs/reports/aks-10k-els-loadgen-sentinel.md)
-and its
-[machine-readable result](docs/reports/aks-10k-els-loadgen-sentinel.json)
-for canonical streaming latency and aggregate conclusions. Full artifact
+[Three-stage G5 report](docs/reports/aks-10k-three-stage-g5-d4.md) and its
+[machine-readable result](docs/reports/aks-10k-three-stage-g5-d4.json) for
+canonical streaming latency and aggregate conclusions. Full artifact
 selection, hashes, and historical reports are recorded in
 [artifact provenance](docs/reports/README.md).
 

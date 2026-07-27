@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>growth-20260726-164117-6c29992e-0491 三阶段延迟</title>
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:1180px;margin:40px auto;padding:0 24px;color:#172033;background:#f7f9fc}
+h1,h2{color:#102a43}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+.card{background:#fff;border:1px solid #d9e2ec;border-radius:12px;padding:20px;box-shadow:0 4px 14px #102a4310}
+.value{font-size:30px;font-weight:700;color:#087f5b}.label{font-size:14px;color:#52667a}.detail{margin-top:8px;color:#334e68}
+table{width:100%;border-collapse:collapse;background:#fff}th,td{padding:10px;border:1px solid #d9e2ec;text-align:right}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}code{background:#e9f2ff;padding:2px 5px;border-radius:4px}
+.note{background:#fff4e6;border-left:4px solid #f08c00;padding:14px 18px}
+</style>
+</head>
+<body>
+<h1>growth-20260726-164117-6c29992e-0491 三阶段延迟验证</h1>
+<p><code>probe_sync_latency_ms</code> = <code>streaming_delivery_latency_ms</code></p>
+<div class="cards">
+<div class="card"><div class="label">端到端平均</div><div class="value">69.43 ms</div><div class="detail">runner × revision p99 87.01 ms–248.00 ms</div></div>
+<div class="card"><div class="label">控制面写入平均</div><div class="value">9.60 ms</div><div class="detail">p95 12.10 ms / p99 12.82 ms</div></div>
+<div class="card"><div class="label">Streaming 投递平均（canonical probe_sync）</div><div class="value">59.83 ms</div><div class="detail">runner × revision p95 77.00 ms–228.00 ms / p99 79.01 ms–237.00 ms</div></div>
+</div>
+<h2>Revision 明细</h2>
+<table><thead><tr><th>#</th><th>Revision</th><th>Control plane</th><th>Streaming avg</th><th>Streaming p95</th><th>Streaming p99</th><th>End-to-end avg</th></tr></thead>
+<tbody><tr><td>1</td><td>rev-001</td><td>10.00 ms</td><td>50.43 ms</td><td>77.05 ms–160.05 ms</td><td>83.00 ms–165.00 ms</td><td>60.43 ms</td></tr>
+<tr><td>2</td><td>rev-002</td><td>11.00 ms</td><td>71.87 ms</td><td>92.00 ms–228.00 ms</td><td>93.00 ms–237.00 ms</td><td>82.87 ms</td></tr>
+<tr><td>3</td><td>rev-003</td><td>9.00 ms</td><td>57.32 ms</td><td>82.00 ms–123.05 ms</td><td>87.01 ms–128.00 ms</td><td>66.32 ms</td></tr>
+<tr><td>4</td><td>rev-004</td><td>7.00 ms</td><td>67.58 ms</td><td>87.00 ms–133.00 ms</td><td>89.00 ms–135.01 ms</td><td>74.58 ms</td></tr>
+<tr><td>5</td><td>rev-005</td><td>11.00 ms</td><td>49.02 ms</td><td>79.00 ms–118.05 ms</td><td>86.00 ms–121.00 ms</td><td>60.02 ms</td></tr>
+<tr><td>6</td><td>rev-006</td><td>8.00 ms</td><td>54.39 ms</td><td>77.00 ms–124.00 ms</td><td>79.01 ms–126.00 ms</td><td>62.39 ms</td></tr>
+<tr><td>7</td><td>rev-007</td><td>8.00 ms</td><td>69.06 ms</td><td>86.00 ms–146.00 ms</td><td>102.01 ms–148.00 ms</td><td>77.06 ms</td></tr>
+<tr><td>8</td><td>rev-008</td><td>13.00 ms</td><td>50.94 ms</td><td>81.05 ms–99.00 ms</td><td>100.00 ms–109.00 ms</td><td>63.94 ms</td></tr>
+<tr><td>9</td><td>rev-009</td><td>9.00 ms</td><td>61.77 ms</td><td>81.00 ms–177.00 ms</td><td>85.00 ms–184.01 ms</td><td>70.77 ms</td></tr>
+<tr><td>10</td><td>rev-010</td><td>10.00 ms</td><td>65.96 ms</td><td>84.00 ms–126.00 ms</td><td>87.00 ms–128.00 ms</td><td>75.96 ms</td></tr></tbody></table>
+<h2>测量说明</h2>
+<div class="note">报告使用 10 个 Redis SUBSCRIBE observer 中最早的到达时间近似 PUBLISH 边界。该边界避免把数据库、revision 写入和 API 前置处理计入 <code>probe_sync_latency_ms</code>；最早 observer 自身的网络/调度间隔会让 Streaming 结果有轻微低估。本轮 -2 ms 最小值表示约 2 ms 的时钟/边界误差，不表示真实负延迟。</div>
+</body>
+</html>

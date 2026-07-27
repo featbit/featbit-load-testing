@@ -394,8 +394,26 @@ foreach ($nodeFile in $nodeFiles) {
     if ([string]$metadata.target_sample_interval_seconds -ne "1") {
         throw "Node '$node' did not target a one-second sample interval."
     }
+    $metadataElsPod = if ($metadata.Contains("els_pod")) {
+        [string]$metadata.els_pod
+    }
+    else {
+        ""
+    }
+    $metadataElsPodCount = if ($metadata.Contains("els_pod_count")) {
+        [int]$metadata.els_pod_count
+    }
+    elseif ([string]::IsNullOrWhiteSpace($metadataElsPod)) {
+        0
+    }
+    else {
+        @($metadataElsPod -split "," | Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_)
+        }).Count
+    }
     if (
         $nodePool -eq "featbit" -and
+        $metadataElsPodCount -gt 0 -and
         [string]::IsNullOrWhiteSpace([string]$metadata.els_container_cgroup)
     ) {
         throw "FeatBit node '$node' is missing the ELS host-cgroup mapping."
@@ -403,9 +421,11 @@ foreach ($nodeFile in $nodeFiles) {
     $metadataRecords.Add([ordered]@{
         node = $node
         nodePool = $nodePool
-        elsPod = if ($metadata.Contains("els_pod")) {
-            [string]$metadata.els_pod
-        } else { "" }
+        elsPod = $metadataElsPod
+        elsPodCount = $metadataElsPodCount
+        elsMappingMode = if ($metadata.Contains("els_mapping_mode")) {
+            [string]$metadata.els_mapping_mode
+        } else { "legacy-first-pod-on-node" }
         elsContainerId = if ($metadata.Contains("els_container_id")) {
             [string]$metadata.els_container_id
         } else { "" }
@@ -668,7 +688,17 @@ $elsRecords = @($records | Where-Object {
 $elsPeriods = Get-Sum -Values @($elsRecords.elsCpuPeriods)
 $elsThrottledPeriods = Get-Sum -Values @($elsRecords.elsThrottledPeriods)
 $elsSummary = [ordered]@{
-    podCount = @($elsRecords.elsPod | Sort-Object -Unique).Count
+    podCount = [int](Get-Sum -Values @(
+        $metadataRecords |
+            Where-Object elsPodCount -gt 0 |
+            ForEach-Object elsPodCount
+    ))
+    mappingModes = @(
+        $metadataRecords |
+            Where-Object elsPodCount -gt 0 |
+            ForEach-Object elsMappingMode |
+            Sort-Object -Unique
+    )
     cpuMillicores = Get-Statistics -Values @($elsRecords.elsCpuMillicores)
     cpuPressurePercent = Get-Statistics -Values @(
         $elsRecords.elsCpuPressurePercent

@@ -12,6 +12,9 @@ param(
     [int] $ExpectedElsPods = 6,
 
     [ValidateRange(1, 100)]
+    [int] $ExpectedElsNodes = 6,
+
+    [ValidateRange(1, 100)]
     [int] $ExpectedFeatBitNodes = 6,
 
     [ValidateRange(1, 100)]
@@ -117,9 +120,9 @@ if (
 }
 
 $elsNodes = @($readyElsPods.spec.nodeName | Sort-Object -Unique)
-if ($elsNodes.Count -ne $ExpectedElsPods) {
+if ($elsNodes.Count -ne $ExpectedElsNodes) {
     throw (
-        "The 1-second evidence run requires one ELS Pod per node; " +
+        "Expected $ExpectedElsPods ELS Pods on $ExpectedElsNodes node(s); " +
         "found $ExpectedElsPods Pods on $($elsNodes.Count) nodes."
     )
 }
@@ -371,6 +374,50 @@ try {
         )
     }
 
+    $mappingValidated = $false
+    $mappedElsPods = -1
+    for ($attempt = 1; $attempt -le 30; $attempt += 1) {
+        $mappingOutput = (
+            & kubectl --request-timeout=30s `
+                --context $targetContext `
+                -n $script:LoadTestNamespace `
+                exec results-reader -- `
+                sh -c (
+                    "grep -h '^els_pod_count=' " +
+                    "/results/$RunId-node-aks-featbit-*-metadata.txt " +
+                    "2>/dev/null || true"
+                ) |
+                Out-String
+        )
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to validate the ELS cgroup mapping evidence."
+        }
+        $mappingCounts = @(
+            $mappingOutput -split "\r?\n" |
+                Where-Object { $_ -match "^els_pod_count=(\d+)$" } |
+                ForEach-Object { [int]$Matches[1] }
+        )
+        if ($mappingCounts.Count -eq $ExpectedFeatBitNodes) {
+            $mappedElsPods = [int](
+                $mappingCounts |
+                    Measure-Object -Sum |
+                    Select-Object -ExpandProperty Sum
+            )
+            if ($mappedElsPods -eq $ExpectedElsPods) {
+                $mappingValidated = $true
+                break
+            }
+        }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $mappingValidated) {
+        throw (
+            "Expected one-second evidence mappings for $ExpectedElsPods ELS " +
+            "Pod(s) across $ExpectedFeatBitNodes FeatBit collectors; found " +
+            "$mappedElsPods mapped ELS Pod(s)."
+        )
+    }
+
     $cleanupRequired = $false
     [pscustomobject]@{
         RunId = $RunId
@@ -379,6 +426,7 @@ try {
         LoadgenNodes = $loadgenNodes.Count
         ElsPods = $readyElsPods.Count
         ElsNodes = $elsNodes.Count
+        MappedElsPods = $mappedElsPods
         SampleIntervalSeconds = 1
     }
 }

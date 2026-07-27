@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "matrixId": "aks-three-stage-g5-d4-els3",
+  "description": "Repeat historical Five-group G5 once with the three-stage latency contract: 20 x 500 runners on ten D4 loadgen nodes, three ELS Pods spread one per three D4 FeatBit nodes, and the original G5 ELS and runner resources.",
+  "primaryMetric": "Worst per-revision, per-runner probe_sync_latency_ms p99",
+  "successThresholdMs": 1000,
+  "practicalEquivalence": {
+    "relativeFraction": 0.10,
+    "absoluteMilliseconds": 50
+  },
+  "fixed": {
+    "kubernetesContext": "aks-featbit-load-testing",
+    "profile": "growth",
+    "totalConnections": 10000,
+    "connectionsPerSecond": 100,
+    "loadgenNodeCount": 10,
+    "loadgenNodeVmSize": "Standard_D4ds_v5",
+    "featbitNodeCount": 3,
+    "featbitNodeVmSize": "Standard_D4ds_v5",
+    "repetitions": 1,
+    "measuredFlagCount": 1,
+    "provisionedFlagCount": 20,
+    "expectedRevisions": [
+      "rev-001",
+      "rev-002",
+      "rev-003",
+      "rev-004",
+      "rev-005",
+      "rev-006",
+      "rev-007",
+      "rev-008",
+      "rev-009",
+      "rev-010"
+    ],
+    "streamingUrl": "ws://featbit-els.featbit.svc.cluster.local:5100",
+    "configurationApiUrl": "http://featbit-api.featbit.svc.cluster.local:5000",
+    "controllerWarmupSettleSeconds": 2,
+    "controllerStartDelaySeconds": 5,
+    "revisionIntervalSeconds": 30,
+    "controllerFinalSettleSeconds": 30,
+    "holdDurationSeconds": 600,
+    "resourceSampleIntervalSeconds": 5,
+    "nodeEvidenceSampleIntervalSeconds": 1,
+    "enableStageLatencyTiming": true,
+    "enableElsSentinelMatrix": false,
+    "elsSettleSeconds": 60,
+    "betweenRunSettleSeconds": 0,
+    "restoreElsReplicas": 3,
+    "restoreElsNodeCount": 3,
+    "runnerImage": "featbitloadtesting22793c56acr.azurecr.io/featbit-k6@sha256:6be2bc244f5da38580961c3c23e2bafb95035e1ff2d70f41b6f19e9ffbe3b7df",
+    "elsImage": "docker.io/featbit/featbit-evaluation-server:5.4.4",
+    "elsResources": {
+      "cpuRequest": "500m",
+      "cpuLimit": "1",
+      "memoryRequest": "256Mi",
+      "memoryLimit": "512Mi"
+    }
+  },
+  "groups": [
+    {
+      "id": "g5-three-stage-d4",
+      "label": "Historical G5 resources: 20 x 500 runners; 3 ELS Pods spread one per 3 D4 FeatBit nodes; Three-stage only",
+      "parallelism": 20,
+      "connectionsPerRunner": 500,
+      "runnersPerNode": 2,
+      "elsReplicas": 3,
+      "elsNodeCount": 3,
+      "elsPlacement": "spread",
+      "runnerResources": {
+        "cpuRequest": "1",
+        "memoryRequest": "2Gi",
+        "memoryLimit": "6Gi"
+      }
+    }
+  ],
+  "excludedRuns": [
+    {
+      "runId": "growth-20260726-160622-6c29992e-e34e",
+      "reason": "Aborted before TestRun submission when the requested FeatBit topology changed from three D2 nodes to the historical G5 topology on three D4 nodes. No latency result exists or is used."
+    }
+  ],
+  "executionOrder": [
+    {
+      "group": "g5-three-stage-d4",
+      "replicate": 1
+    }
+  ]
+}

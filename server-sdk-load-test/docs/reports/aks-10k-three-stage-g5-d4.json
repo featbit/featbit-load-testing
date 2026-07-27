@@ -1,0 +1,944 @@
+{
+  "schemaVersion": 1,
+  "runId": "growth-20260726-164117-6c29992e-0491",
+  "generatedAtUtc": "2026-07-26T17:04:30.521Z",
+  "validationStatus": "preliminary: canonical averages and runner percentiles are usable; values near zero carry approximately 2 ms boundary/clock uncertainty",
+  "definitions": {
+    "end_to_end_latency_ms": "controller PUT request start -> SDK applies revision",
+    "control_plane_write_latency_ms": "controller PUT request start -> earliest Redis publication observation across loadgen nodes",
+    "probe_sync_latency_ms": "earliest Redis publication observation across loadgen nodes -> SDK applies revision",
+    "probe_sync_alias": "streaming_delivery_latency_ms",
+    "raw_metric": "probe_updated_at_to_sdk_latency_ms",
+    "distributed_percentiles": "min-max range across runner x revision cohorts; not a merged global percentile"
+  },
+  "equation": "end_to_end_latency_ms = control_plane_write_latency_ms + probe_sync_latency_ms",
+  "metrics": {
+    "end_to_end_latency_ms": {
+      "count": 100000,
+      "avg": 69.43338,
+      "min": 8,
+      "max": 255,
+      "med": {
+        "min": 52.5,
+        "max": 140.5
+      },
+      "p90": {
+        "min": 81,
+        "max": 228
+      },
+      "p95": {
+        "min": 85,
+        "max": 239
+      },
+      "p99": {
+        "min": 87.00999999999999,
+        "max": 248
+      }
+    },
+    "control_plane_write_latency_ms": {
+      "count": 10,
+      "avg": 9.6,
+      "min": 7,
+      "med": 9.5,
+      "p90": 11.2,
+      "p95": 12.099999999999998,
+      "p99": 12.82,
+      "max": 13
+    },
+    "probe_sync_latency_ms": {
+      "count": 100000,
+      "avg": 59.83338,
+      "min": -1,
+      "max": 244,
+      "med": {
+        "min": 43,
+        "max": 129.5
+      },
+      "p90": {
+        "min": 71,
+        "max": 217
+      },
+      "p95": {
+        "min": 77,
+        "max": 228
+      },
+      "p99": {
+        "min": 79.00999999999999,
+        "max": 237
+      }
+    },
+    "streaming_delivery_latency_ms": {
+      "count": 100000,
+      "avg": 59.83338,
+      "min": -1,
+      "max": 244,
+      "med": {
+        "min": 43,
+        "max": 129.5
+      },
+      "p90": {
+        "min": 71,
+        "max": 217
+      },
+      "p95": {
+        "min": 77,
+        "max": 228
+      },
+      "p99": {
+        "min": 79.00999999999999,
+        "max": 237
+      }
+    },
+    "probe_updated_at_to_sdk_latency_ms": {
+      "count": 100000,
+      "avg": 70.83338,
+      "min": 10,
+      "max": 256,
+      "med": {
+        "min": 54.5,
+        "max": 141.5
+      },
+      "p90": {
+        "min": 83,
+        "max": 229
+      },
+      "p95": {
+        "min": 87,
+        "max": 240
+      },
+      "p99": {
+        "min": 89.00999999999999,
+        "max": 249
+      }
+    }
+  },
+  "observer": {
+    "boundary": "Earliest Redis publication observation across ten loadgen nodes",
+    "clockAssumption": "AKS node clocks are platform-synchronized",
+    "podCount": 10,
+    "nodeCount": 10,
+    "matchedEventCount": 100,
+    "arrivalSpreadMs": {
+      "count": 10,
+      "avg": 7.2,
+      "min": 6,
+      "med": 7,
+      "p90": 8.1,
+      "p95": 8.549999999999999,
+      "p99": 8.91,
+      "max": 9
+    },
+    "caveat": "The earliest subscriber receive follows Redis PUBLISH by a small network/scheduling interval and can slightly understate streaming delivery."
+  },
+  "topology": {
+    "parallelism": 20,
+    "runnersPerNode": 2,
+    "connections": 10000,
+    "connectionsPerSecond": 100,
+    "controllerNode": "aks-loadgen-10501918-vmss000001",
+    "loadgenNodes": [
+      "aks-loadgen-10501918-vmss000000",
+      "aks-loadgen-10501918-vmss000001",
+      "aks-loadgen-10501918-vmss000002",
+      "aks-loadgen-10501918-vmss000003",
+      "aks-loadgen-10501918-vmss000004",
+      "aks-loadgen-10501918-vmss000005",
+      "aks-loadgen-10501918-vmss000006",
+      "aks-loadgen-10501918-vmss000007",
+      "aks-loadgen-10501918-vmss000008",
+      "aks-loadgen-10501918-vmss00000a"
+    ]
+  },
+  "revisions": [
+    {
+      "revisionIndex": 1,
+      "revision": "rev-001",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:47:22.0349404Z",
+      "controllerRequestStartedAtUnixMs": 1785084442036,
+      "controllerRequestEndedAtUnixMs": 1785084442050,
+      "controllerApiResponseMs": 14,
+      "redisObservedAtControllerNodeUnixMs": 1785084442051,
+      "redisFirstObservedAtUnixMs": 1785084442046,
+      "controlPlaneWriteMs": 10,
+      "observerArrivalSpreadMs": 9,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 62.4328,
+        "min": 11,
+        "max": 178,
+        "med": {
+          "min": 55,
+          "max": 125.5
+        },
+        "p90": {
+          "min": 83,
+          "max": 167.10000000000002
+        },
+        "p95": {
+          "min": 89.04999999999995,
+          "max": 172.04999999999995
+        },
+        "p99": {
+          "min": 95,
+          "max": 177
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 50.4328,
+        "min": -1,
+        "max": 166,
+        "med": {
+          "min": 43,
+          "max": 113.5
+        },
+        "p90": {
+          "min": 71,
+          "max": 155.10000000000002
+        },
+        "p95": {
+          "min": 77.04999999999995,
+          "max": 160.04999999999995
+        },
+        "p99": {
+          "min": 83,
+          "max": 165
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 60.4328,
+        "min": 9,
+        "max": 176,
+        "med": {
+          "min": 53,
+          "max": 123.5
+        },
+        "p90": {
+          "min": 81,
+          "max": 165.10000000000002
+        },
+        "p95": {
+          "min": 87.04999999999995,
+          "max": 170.04999999999995
+        },
+        "p99": {
+          "min": 93,
+          "max": 175
+        }
+      }
+    },
+    {
+      "revisionIndex": 2,
+      "revision": "rev-002",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:47:52.0671924Z",
+      "controllerRequestStartedAtUnixMs": 1785084472068,
+      "controllerRequestEndedAtUnixMs": 1785084472091,
+      "controllerApiResponseMs": 23,
+      "redisObservedAtControllerNodeUnixMs": 1785084472085,
+      "redisFirstObservedAtUnixMs": 1785084472079,
+      "controlPlaneWriteMs": 11,
+      "observerArrivalSpreadMs": 7,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 83.8705,
+        "min": 14,
+        "max": 256,
+        "med": {
+          "min": 74,
+          "max": 141.5
+        },
+        "p90": {
+          "min": 101,
+          "max": 229
+        },
+        "p95": {
+          "min": 104,
+          "max": 240
+        },
+        "p99": {
+          "min": 105,
+          "max": 249
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 71.8705,
+        "min": 2,
+        "max": 244,
+        "med": {
+          "min": 62,
+          "max": 129.5
+        },
+        "p90": {
+          "min": 89,
+          "max": 217
+        },
+        "p95": {
+          "min": 92,
+          "max": 228
+        },
+        "p99": {
+          "min": 93,
+          "max": 237
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 82.8705,
+        "min": 13,
+        "max": 255,
+        "med": {
+          "min": 73,
+          "max": 140.5
+        },
+        "p90": {
+          "min": 100,
+          "max": 228
+        },
+        "p95": {
+          "min": 103,
+          "max": 239
+        },
+        "p99": {
+          "min": 104,
+          "max": 248
+        }
+      }
+    },
+    {
+      "revisionIndex": 3,
+      "revision": "rev-003",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:48:22.1003099Z",
+      "controllerRequestStartedAtUnixMs": 1785084502102,
+      "controllerRequestEndedAtUnixMs": 1785084502116,
+      "controllerApiResponseMs": 14,
+      "redisObservedAtControllerNodeUnixMs": 1785084502116,
+      "redisFirstObservedAtUnixMs": 1785084502111,
+      "controlPlaneWriteMs": 9,
+      "observerArrivalSpreadMs": 6,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 68.3186,
+        "min": 10,
+        "max": 139,
+        "med": {
+          "min": 61,
+          "max": 83
+        },
+        "p90": {
+          "min": 90,
+          "max": 131
+        },
+        "p95": {
+          "min": 93,
+          "max": 134.04999999999995
+        },
+        "p99": {
+          "min": 98.00999999999999,
+          "max": 139
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 57.3186,
+        "min": -1,
+        "max": 128,
+        "med": {
+          "min": 50,
+          "max": 72
+        },
+        "p90": {
+          "min": 79,
+          "max": 120
+        },
+        "p95": {
+          "min": 82,
+          "max": 123.04999999999995
+        },
+        "p99": {
+          "min": 87.00999999999999,
+          "max": 128
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 66.3186,
+        "min": 8,
+        "max": 137,
+        "med": {
+          "min": 59,
+          "max": 81
+        },
+        "p90": {
+          "min": 88,
+          "max": 129
+        },
+        "p95": {
+          "min": 91,
+          "max": 132.04999999999995
+        },
+        "p99": {
+          "min": 96.00999999999999,
+          "max": 137
+        }
+      }
+    },
+    {
+      "revisionIndex": 4,
+      "revision": "rev-004",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:48:52.1260292Z",
+      "controllerRequestStartedAtUnixMs": 1785084532128,
+      "controllerRequestEndedAtUnixMs": 1785084532140,
+      "controllerApiResponseMs": 12,
+      "redisObservedAtControllerNodeUnixMs": 1785084532141,
+      "redisFirstObservedAtUnixMs": 1785084532135,
+      "controlPlaneWriteMs": 7,
+      "observerArrivalSpreadMs": 7,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 76.5758,
+        "min": 28,
+        "max": 145,
+        "med": {
+          "min": 65.5,
+          "max": 94
+        },
+        "p90": {
+          "min": 93,
+          "max": 137
+        },
+        "p95": {
+          "min": 96,
+          "max": 142
+        },
+        "p99": {
+          "min": 98,
+          "max": 144.01
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 67.5758,
+        "min": 19,
+        "max": 136,
+        "med": {
+          "min": 56.5,
+          "max": 85
+        },
+        "p90": {
+          "min": 84,
+          "max": 128
+        },
+        "p95": {
+          "min": 87,
+          "max": 133
+        },
+        "p99": {
+          "min": 89,
+          "max": 135.01
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 74.5758,
+        "min": 26,
+        "max": 143,
+        "med": {
+          "min": 63.5,
+          "max": 92
+        },
+        "p90": {
+          "min": 91,
+          "max": 135
+        },
+        "p95": {
+          "min": 94,
+          "max": 140
+        },
+        "p99": {
+          "min": 96,
+          "max": 142.01
+        }
+      }
+    },
+    {
+      "revisionIndex": 5,
+      "revision": "rev-005",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:49:22.148348Z",
+      "controllerRequestStartedAtUnixMs": 1785084562149,
+      "controllerRequestEndedAtUnixMs": 1785084562164,
+      "controllerApiResponseMs": 15,
+      "redisObservedAtControllerNodeUnixMs": 1785084562164,
+      "redisFirstObservedAtUnixMs": 1785084562160,
+      "controlPlaneWriteMs": 11,
+      "observerArrivalSpreadMs": 6,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 61.0226,
+        "min": 11,
+        "max": 136,
+        "med": {
+          "min": 55,
+          "max": 77
+        },
+        "p90": {
+          "min": 85,
+          "max": 126
+        },
+        "p95": {
+          "min": 91,
+          "max": 130.04999999999995
+        },
+        "p99": {
+          "min": 98,
+          "max": 133
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 49.0226,
+        "min": -1,
+        "max": 124,
+        "med": {
+          "min": 43,
+          "max": 65
+        },
+        "p90": {
+          "min": 73,
+          "max": 114
+        },
+        "p95": {
+          "min": 79,
+          "max": 118.04999999999995
+        },
+        "p99": {
+          "min": 86,
+          "max": 121
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 60.0226,
+        "min": 10,
+        "max": 135,
+        "med": {
+          "min": 54,
+          "max": 76
+        },
+        "p90": {
+          "min": 84,
+          "max": 125
+        },
+        "p95": {
+          "min": 90,
+          "max": 129.04999999999995
+        },
+        "p99": {
+          "min": 97,
+          "max": 132
+        }
+      }
+    },
+    {
+      "revisionIndex": 6,
+      "revision": "rev-006",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:49:52.1755496Z",
+      "controllerRequestStartedAtUnixMs": 1785084592177,
+      "controllerRequestEndedAtUnixMs": 1785084592189,
+      "controllerApiResponseMs": 12,
+      "redisObservedAtControllerNodeUnixMs": 1785084592190,
+      "redisFirstObservedAtUnixMs": 1785084592185,
+      "controlPlaneWriteMs": 8,
+      "observerArrivalSpreadMs": 7,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 64.3879,
+        "min": 10,
+        "max": 136,
+        "med": {
+          "min": 54.5,
+          "max": 89
+        },
+        "p90": {
+          "min": 83.10000000000002,
+          "max": 130
+        },
+        "p95": {
+          "min": 87,
+          "max": 134
+        },
+        "p99": {
+          "min": 89.00999999999999,
+          "max": 136
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 54.3879,
+        "min": 0,
+        "max": 126,
+        "med": {
+          "min": 44.5,
+          "max": 79
+        },
+        "p90": {
+          "min": 73.10000000000002,
+          "max": 120
+        },
+        "p95": {
+          "min": 77,
+          "max": 124
+        },
+        "p99": {
+          "min": 79.00999999999999,
+          "max": 126
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 62.3879,
+        "min": 8,
+        "max": 134,
+        "med": {
+          "min": 52.5,
+          "max": 87
+        },
+        "p90": {
+          "min": 81.10000000000002,
+          "max": 128
+        },
+        "p95": {
+          "min": 85,
+          "max": 132
+        },
+        "p99": {
+          "min": 87.00999999999999,
+          "max": 134
+        }
+      }
+    },
+    {
+      "revisionIndex": 7,
+      "revision": "rev-007",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:50:22.1997306Z",
+      "controllerRequestStartedAtUnixMs": 1785084622201,
+      "controllerRequestEndedAtUnixMs": 1785084622213,
+      "controllerApiResponseMs": 12,
+      "redisObservedAtControllerNodeUnixMs": 1785084622214,
+      "redisFirstObservedAtUnixMs": 1785084622209,
+      "controlPlaneWriteMs": 8,
+      "observerArrivalSpreadMs": 8,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 79.063,
+        "min": 10,
+        "max": 158,
+        "med": {
+          "min": 63,
+          "max": 121
+        },
+        "p90": {
+          "min": 93,
+          "max": 153.10000000000002
+        },
+        "p95": {
+          "min": 96,
+          "max": 156
+        },
+        "p99": {
+          "min": 112.00999999999999,
+          "max": 158
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 69.063,
+        "min": 0,
+        "max": 148,
+        "med": {
+          "min": 53,
+          "max": 111
+        },
+        "p90": {
+          "min": 83,
+          "max": 143.10000000000002
+        },
+        "p95": {
+          "min": 86,
+          "max": 146
+        },
+        "p99": {
+          "min": 102.00999999999999,
+          "max": 148
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 77.063,
+        "min": 8,
+        "max": 156,
+        "med": {
+          "min": 61,
+          "max": 119
+        },
+        "p90": {
+          "min": 91,
+          "max": 151.10000000000002
+        },
+        "p95": {
+          "min": 94,
+          "max": 154
+        },
+        "p99": {
+          "min": 110.00999999999999,
+          "max": 156
+        }
+      }
+    },
+    {
+      "revisionIndex": 8,
+      "revision": "rev-008",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:50:52.2332278Z",
+      "controllerRequestStartedAtUnixMs": 1785084652233,
+      "controllerRequestEndedAtUnixMs": 1785084652252,
+      "controllerApiResponseMs": 19,
+      "redisObservedAtControllerNodeUnixMs": 1785084652250,
+      "redisFirstObservedAtUnixMs": 1785084652246,
+      "controlPlaneWriteMs": 13,
+      "observerArrivalSpreadMs": 7,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 63.9408,
+        "min": 12,
+        "max": 123,
+        "med": {
+          "min": 61,
+          "max": 72
+        },
+        "p90": {
+          "min": 89,
+          "max": 109
+        },
+        "p95": {
+          "min": 94.04999999999995,
+          "max": 112
+        },
+        "p99": {
+          "min": 113,
+          "max": 122
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 50.9408,
+        "min": -1,
+        "max": 110,
+        "med": {
+          "min": 48,
+          "max": 59
+        },
+        "p90": {
+          "min": 76,
+          "max": 96
+        },
+        "p95": {
+          "min": 81.04999999999995,
+          "max": 99
+        },
+        "p99": {
+          "min": 100,
+          "max": 109
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 63.9408,
+        "min": 12,
+        "max": 123,
+        "med": {
+          "min": 61,
+          "max": 72
+        },
+        "p90": {
+          "min": 89,
+          "max": 109
+        },
+        "p95": {
+          "min": 94.04999999999995,
+          "max": 112
+        },
+        "p99": {
+          "min": 113,
+          "max": 122
+        }
+      }
+    },
+    {
+      "revisionIndex": 9,
+      "revision": "rev-009",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:51:22.264437Z",
+      "controllerRequestStartedAtUnixMs": 1785084682265,
+      "controllerRequestEndedAtUnixMs": 1785084682278,
+      "controllerApiResponseMs": 13,
+      "redisObservedAtControllerNodeUnixMs": 1785084682279,
+      "redisFirstObservedAtUnixMs": 1785084682274,
+      "controlPlaneWriteMs": 9,
+      "observerArrivalSpreadMs": 8,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 71.7657,
+        "min": 10,
+        "max": 198,
+        "med": {
+          "min": 55,
+          "max": 127.5
+        },
+        "p90": {
+          "min": 86,
+          "max": 176.10000000000002
+        },
+        "p95": {
+          "min": 91,
+          "max": 187
+        },
+        "p99": {
+          "min": 95,
+          "max": 194.01
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 61.7657,
+        "min": 0,
+        "max": 188,
+        "med": {
+          "min": 45,
+          "max": 117.5
+        },
+        "p90": {
+          "min": 76,
+          "max": 166.10000000000002
+        },
+        "p95": {
+          "min": 81,
+          "max": 177
+        },
+        "p99": {
+          "min": 85,
+          "max": 184.01
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 70.7657,
+        "min": 9,
+        "max": 197,
+        "med": {
+          "min": 54,
+          "max": 126.5
+        },
+        "p90": {
+          "min": 85,
+          "max": 175.10000000000002
+        },
+        "p95": {
+          "min": 90,
+          "max": 186
+        },
+        "p99": {
+          "min": 94,
+          "max": 193.01
+        }
+      }
+    },
+    {
+      "revisionIndex": 10,
+      "revision": "rev-010",
+      "flagKey": "loadtest-sync-probe-01",
+      "updatedAt": "2026-07-26T16:51:52.2866591Z",
+      "controllerRequestStartedAtUnixMs": 1785084712287,
+      "controllerRequestEndedAtUnixMs": 1785084712301,
+      "controllerApiResponseMs": 14,
+      "redisObservedAtControllerNodeUnixMs": 1785084712301,
+      "redisFirstObservedAtUnixMs": 1785084712297,
+      "controlPlaneWriteMs": 10,
+      "observerArrivalSpreadMs": 7,
+      "rawUpdatedAtToSdk": {
+        "count": 10000,
+        "avg": 76.9561,
+        "min": 11,
+        "max": 140,
+        "med": {
+          "min": 70,
+          "max": 99
+        },
+        "p90": {
+          "min": 92,
+          "max": 128
+        },
+        "p95": {
+          "min": 95,
+          "max": 137
+        },
+        "p99": {
+          "min": 98,
+          "max": 139
+        }
+      },
+      "streaming": {
+        "count": 10000,
+        "avg": 65.9561,
+        "min": 0,
+        "max": 129,
+        "med": {
+          "min": 59,
+          "max": 88
+        },
+        "p90": {
+          "min": 81,
+          "max": 117
+        },
+        "p95": {
+          "min": 84,
+          "max": 126
+        },
+        "p99": {
+          "min": 87,
+          "max": 128
+        }
+      },
+      "endToEnd": {
+        "count": 10000,
+        "avg": 75.9561,
+        "min": 10,
+        "max": 139,
+        "med": {
+          "min": 69,
+          "max": 98
+        },
+        "p90": {
+          "min": 91,
+          "max": 127
+        },
+        "p95": {
+          "min": 94,
+          "max": 136
+        },
+        "p99": {
+          "min": 97,
+          "max": 138
+        }
+      }
+    }
+  ]
+}

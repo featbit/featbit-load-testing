@@ -125,6 +125,19 @@ function Get-MatrixGroup {
     return $matches[0]
 }
 
+function Get-GroupElsNodeCount {
+    param(
+        [Parameter(Mandatory)]
+        [object] $Group
+    )
+
+    $property = $Group.PSObject.Properties["elsNodeCount"]
+    if ($null -ne $property) {
+        return [int]$property.Value
+    }
+    return [int]$script:Matrix.fixed.featbitNodeCount
+}
+
 function Assert-MatrixDefinition {
     $fixed = $script:Matrix.fixed
     $groups = @($script:Matrix.groups)
@@ -153,6 +166,7 @@ function Assert-MatrixDefinition {
         $connectionsPerRunner = [int]$group.connectionsPerRunner
         $runnersPerNode = [int]$group.runnersPerNode
         $elsReplicas = [int]$group.elsReplicas
+        $elsNodeCount = Get-GroupElsNodeCount -Group $group
 
         if ($parallelism -lt 1 -or $connectionsPerRunner -lt 1 -or $runnersPerNode -lt 1) {
             throw "Group '$($group.id)' contains a non-positive runner setting."
@@ -167,12 +181,33 @@ function Assert-MatrixDefinition {
             -Expected ($runnersPerNode * [int]$fixed.loadgenNodeCount)
         if (
             $elsReplicas -lt 1 -or
-            $elsReplicas % [int]$fixed.featbitNodeCount -ne 0
+            $elsNodeCount -lt 1 -or
+            $elsNodeCount -gt [int]$fixed.featbitNodeCount -or
+            $elsReplicas % $elsNodeCount -ne 0
         ) {
             throw (
                 "Group '$($group.id)' ELS replicas must be positive and evenly " +
-                "divisible across the fixed FeatBit node count."
+                "divisible across its ELS target node count."
             )
+        }
+        $placementProperty = $group.PSObject.Properties["elsPlacement"]
+        if ($null -ne $placementProperty) {
+            $placement = [string]$placementProperty.Value
+            if ($placement -notin @("packed", "spread")) {
+                throw "Group '$($group.id)' has unsupported ELS placement '$placement'."
+            }
+            if ($placement -eq "packed" -and $elsNodeCount -ne 1) {
+                throw "Group '$($group.id)' packed placement requires elsNodeCount=1."
+            }
+            if (
+                $placement -eq "spread" -and
+                $elsNodeCount -ne $elsReplicas
+            ) {
+                throw (
+                    "Group '$($group.id)' spread placement requires one target " +
+                    "node per ELS Pod."
+                )
+            }
         }
         foreach ($resourceName in @(
             "cpuRequest",
@@ -236,6 +271,34 @@ function Assert-MatrixDefinition {
         [int]$fixed.revisionIntervalSeconds
     )) {
         throw "Hold duration is too short to contain all configured revisions."
+    }
+
+    $restoreElsReplicas = if (
+        $null -ne $fixed.PSObject.Properties["restoreElsReplicas"]
+    ) {
+        [int]$fixed.restoreElsReplicas
+    }
+    else {
+        6
+    }
+    $restoreElsNodeCount = if (
+        $null -ne $fixed.PSObject.Properties["restoreElsNodeCount"]
+    ) {
+        [int]$fixed.restoreElsNodeCount
+    }
+    else {
+        [int]$fixed.featbitNodeCount
+    }
+    if (
+        $restoreElsReplicas -lt 1 -or
+        $restoreElsNodeCount -lt 1 -or
+        $restoreElsNodeCount -gt [int]$fixed.featbitNodeCount -or
+        $restoreElsReplicas % $restoreElsNodeCount -ne 0
+    ) {
+        throw (
+            "The restored ELS replica count must be positive and evenly " +
+            "divisible across a valid restored ELS node count."
+        )
     }
 
     $sentinelEnabled = $fixed.PSObject.Properties["enableElsSentinelMatrix"]
@@ -384,7 +447,9 @@ function Assert-ElsPlacement {
         [object] $ElsState,
 
         [Parameter(Mandatory)]
-        [int] $ExpectedReplicas
+        [int] $ExpectedReplicas,
+
+        [int] $ExpectedNodeCount = 0
     )
 
     $deployment = $ElsState.deployment
@@ -411,11 +476,14 @@ function Assert-ElsPlacement {
         -Actual $readyPods.Count `
         -Expected $ExpectedReplicas
 
-    $expectedPerNode = $ExpectedReplicas / [int]$script:Matrix.fixed.featbitNodeCount
+    if ($ExpectedNodeCount -eq 0) {
+        $ExpectedNodeCount = [int]$script:Matrix.fixed.featbitNodeCount
+    }
+    $expectedPerNode = $ExpectedReplicas / $ExpectedNodeCount
     if ($expectedPerNode -ne [Math]::Floor($expectedPerNode)) {
         throw (
             "ELS replicas $ExpectedReplicas cannot be evenly placed on " +
-            "$($script:Matrix.fixed.featbitNodeCount) FeatBit nodes."
+            "$ExpectedNodeCount target node(s)."
         )
     }
     $placement = @(
@@ -426,7 +494,7 @@ function Assert-ElsPlacement {
     Assert-Equal `
         -Name "ELS placement node count" `
         -Actual $placement.Count `
-        -Expected $script:Matrix.fixed.featbitNodeCount
+        -Expected $ExpectedNodeCount
     foreach ($nodeGroup in $placement) {
         Assert-Equal `
             -Name "ELS pods on node '$($nodeGroup.Name)'" `
@@ -450,7 +518,9 @@ function Assert-ElsPlacement {
 function Reset-ElsForRun {
     param(
         [Parameter(Mandatory)]
-        [int] $Replicas
+        [int] $Replicas,
+
+        [int] $ExpectedNodeCount = 0
     )
 
     Write-Host (
@@ -509,7 +579,8 @@ function Reset-ElsForRun {
         try {
             $placement = Assert-ElsPlacement `
                 -ElsState (Get-ElsState) `
-                -ExpectedReplicas $Replicas
+                -ExpectedReplicas $Replicas `
+                -ExpectedNodeCount $ExpectedNodeCount
             break
         }
         catch {
@@ -991,11 +1062,12 @@ function Assert-ArchiveForGroup {
             ConvertFrom-Json
     ).items
     $placement = @($pods | Group-Object { $_.spec.nodeName })
+    $expectedElsNodeCount = Get-GroupElsNodeCount -Group $Group
     Assert-Equal `
         -Name "seed ELS node count" `
         -Actual $placement.Count `
-        -Expected $script:Matrix.fixed.featbitNodeCount
-    $expectedPerNode = [int]$Group.elsReplicas / [int]$script:Matrix.fixed.featbitNodeCount
+        -Expected $expectedElsNodeCount
+    $expectedPerNode = [int]$Group.elsReplicas / $expectedElsNodeCount
     foreach ($nodeGroup in $placement) {
         Assert-Equal `
             -Name "seed ELS pods on '$($nodeGroup.Name)'" `
@@ -1078,7 +1150,10 @@ function Invoke-FreshMatrixRun {
         [object] $Group
     )
 
-    $null = Reset-ElsForRun -Replicas ([int]$Group.elsReplicas)
+    $elsNodeCount = Get-GroupElsNodeCount -Group $Group
+    $null = Reset-ElsForRun `
+        -Replicas ([int]$Group.elsReplicas) `
+        -ExpectedNodeCount $elsNodeCount
 
     $note = (
         "Capacity matrix {0} {1} replicate {2}: p{3} x {4}; " +
@@ -1089,7 +1164,7 @@ function Invoke-FreshMatrixRun {
         $Group.parallelism,
         $Group.connectionsPerRunner,
         $Group.elsReplicas,
-        $script:Matrix.fixed.featbitNodeCount
+        $elsNodeCount
     )
     $rendered = & $script:RenderScript `
         -Profile $script:Matrix.fixed.profile `
@@ -1146,6 +1221,7 @@ function Invoke-FreshMatrixRun {
                     -RunId $rendered.RunId `
                     -KubeContext $script:KubeContext `
                     -ExpectedElsPods ([int]$Group.elsReplicas) `
+                    -ExpectedElsNodes $elsNodeCount `
                     -ExpectedFeatBitNodes (
                         [int]$script:Matrix.fixed.featbitNodeCount
                     ) `
@@ -1951,7 +2027,29 @@ try {
     }
 
     # Restore the documented default after all evidence is safely archived.
-    $null = Reset-ElsForRun -Replicas 6
+    $restoreElsReplicas = if (
+        $null -ne $script:Matrix.fixed.PSObject.Properties[
+            "restoreElsReplicas"
+        ]
+    ) {
+        [int]$script:Matrix.fixed.restoreElsReplicas
+    }
+    else {
+        6
+    }
+    $restoreElsNodeCount = if (
+        $null -ne $script:Matrix.fixed.PSObject.Properties[
+            "restoreElsNodeCount"
+        ]
+    ) {
+        [int]$script:Matrix.fixed.restoreElsNodeCount
+    }
+    else {
+        [int]$script:Matrix.fixed.featbitNodeCount
+    }
+    $null = Reset-ElsForRun `
+        -Replicas $restoreElsReplicas `
+        -ExpectedNodeCount $restoreElsNodeCount
 
     $script:State.status = "completed"
     $script:State.completedAtUtc = [DateTime]::UtcNow.ToString("o")

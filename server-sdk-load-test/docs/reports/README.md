@@ -2,6 +2,45 @@
 
 These files preserve the public evidence selected for the repository README.
 
+## Latest Three-stage G5 replay
+
+The latest retained run replayed the historical G5 topology with 10,000
+WebSockets, 20 × 500 k6 runners on ten D4 loadgen nodes, and three ELS Pods
+spread across three D4 FeatBit nodes. The canonical
+`probe_sync_latency_ms` boundary is earliest Redis publication observation to
+SDK apply.
+
+- [Complete report](aks-10k-three-stage-g5-d4.md)
+- [Machine-readable summary](aks-10k-three-stage-g5-d4.json)
+- [Rendered Three-stage summary](aks-10k-three-stage-g5-d4.html)
+- [One-second resource evidence](aks-10k-three-stage-g5-d4-node-evidence-1s.md)
+- [Resource evidence JSON](aks-10k-three-stage-g5-d4-node-evidence-1s.json)
+- [Exact experiment matrix](../../k8s-infra/matrices/aks-three-stage-g5-d4-els3.json)
+
+### Latest retained k6 artifact
+
+Distributed k6 produces one HTML report per runner. Runner 17 is retained
+because it had the highest overall raw `FeatureFlag.UpdatedAt → SDK` p99 among
+the latest run's 20 runners. It is a conservative 500-connection runner view,
+not a merged 10,000-connection report; use the aggregate Three-stage JSON for
+the canonical Redis-observer boundary.
+
+| Field | Value |
+| --- | --- |
+| Run ID | `growth-20260726-164117-6c29992e-0491` |
+| Retained runner | 17 of 20 |
+| Runner connections / formal samples | 500 / 5,000 |
+| Raw average / p95 / p99 / maximum | 74.13 / 141.05 / 229 / 256 ms |
+| HTML SHA-256 | `451189e330d6c0307c0e56b6da56a6ca25b881bbb6f9f5e5f6c396b732874904` |
+| Aggregate Markdown SHA-256 | `bca0ecec4fbbae79f54b3fbcf1b46655d66b8c7592ffb546a6a3992bddc97208` |
+| Aggregate JSON SHA-256 | `0f5bacc13da9c39ca6b5fb1c93fd75ab39f49b354014d5742cb967f4d1031c90` |
+| Matrix SHA-256 | `e95a3902468f98c12e1ee6880b1473ef3b50487cb08d92d5b44143bb5246e8d6` |
+
+- [Versioned latest k6 HTML](aks-10k-three-stage-g5-d4-runner-17.html)
+
+After these changes reach `main`, the Pages workflow publishes the k6 HTML at
+`https://featbit.github.io/featbit-load-testing/reports/aks-10k-three-stage-g5-d4-runner-17.html`.
+
 ## Latest receiver-path diagnostic
 
 The latest campaign kept 10,000 service-routed WebSockets and added a
@@ -16,7 +55,7 @@ tail-latency contributor without modifying FeatBit source.
 - [Machine-readable sentinel result](aks-10k-els-loadgen-sentinel.json)
 - [Exact sentinel matrix](../../k8s-infra/matrices/aks-els-loadgen-sentinel.json)
 
-### Latest retained k6 artifact
+### Retained sentinel k6 artifact
 
 | Field | Value |
 | --- | --- |
