@@ -1,0 +1,181 @@
+apiVersion: k6.io/v1alpha1
+kind: TestRun
+metadata:
+  name: __TEST_RUN_NAME__
+  namespace: featbit-loadtest
+  labels:
+    app.kubernetes.io/name: featbit-k6
+    app.kubernetes.io/part-of: featbit-load-testing
+    loadtest.featbit.io/run-id: __RUN_ID__
+    loadtest.featbit.io/profile: extreme-large-flagset
+    loadtest.featbit.io/experiment: sdk-flagset-3k-g5-v1
+    loadtest.featbit.io/run-kind: __RUN_KIND__
+spec:
+  parallelism: 20
+  separate: false
+  script:
+    localFile: /tests/k6/server-streaming-large-flagset.js
+  arguments: >-
+    --tag run_id=__RUN_ID__
+    --tag profile=extreme-large-flagset
+    --tag experiment=sdk-flagset-3k-g5-v1
+    --tag run_kind=__RUN_KIND__
+  initializer:
+    image: __RUNNER_IMAGE__
+    imagePullPolicy: IfNotPresent
+    nodeSelector:
+      workload: loadgen
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: loadgen
+        effect: NoSchedule
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+  starter:
+    nodeSelector:
+      workload: loadgen
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: loadgen
+        effect: NoSchedule
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+  runner:
+    image: __RUNNER_IMAGE__
+    imagePullPolicy: IfNotPresent
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: workload
+                  operator: In
+                  values:
+                    - loadgen
+                    - loadgen3k
+    tolerations:
+      - key: workload
+        operator: Equal
+        value: loadgen
+        effect: NoSchedule
+      - key: workload
+        operator: Equal
+        value: loadgen3k
+        effect: NoSchedule
+    metadata:
+      labels:
+        app.kubernetes.io/name: featbit-k6-runner
+        loadtest.featbit.io/run-id: __RUN_ID__
+        loadtest.featbit.io/profile: extreme-large-flagset
+        loadtest.featbit.io/experiment: sdk-flagset-3k-g5-v1
+        loadtest.featbit.io/run-kind: __RUN_KIND__
+    topologySpreadConstraints:
+      - maxSkew: 1
+        minDomains: 20
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        labelSelector:
+          matchLabels:
+            loadtest.featbit.io/run-id: __RUN_ID__
+    resources:
+      requests:
+        cpu: "2"
+        memory: 4Gi
+      limits:
+        memory: 12Gi
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 12345
+      runAsGroup: 12345
+      fsGroup: 12345
+      fsGroupChangePolicy: OnRootMismatch
+    envFrom:
+      - configMapRef:
+          name: featbit-k6-flagset-3k-g5-v1-config
+      - secretRef:
+          name: featbit-k6-controller-secret
+    env:
+      - name: FEATBIT_STREAMING_URL
+        value: ws://featbit-els.featbit.svc.cluster.local:5100
+      - name: FEATBIT_API_URL
+        value: http://featbit-api.featbit.svc.cluster.local:5000
+      - name: MULTI_ENVIRONMENT_MODE
+        value: "true"
+      - name: MULTI_ENVIRONMENT_SECRET_PATH
+        value: /var/run/featbit-loadtest/environments.json
+      - name: AUTO_CONTROL_REVISIONS
+        value: "false"
+      - name: POD_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: metadata.name
+      - name: RUN_ID
+        value: __RUN_ID__
+      - name: LOADTEST_PARALLELISM
+        value: "20"
+      - name: EXPECTED_ENVIRONMENT_COUNT
+        value: "1"
+      - name: EXPECTED_CONNECTIONS_PER_ENVIRONMENT_PER_RUNNER
+        value: "500"
+      - name: EXPECTED_FULL_SYNC_FLAG_COUNT
+        value: "3000"
+      - name: DISTRIBUTED_SETUP_BARRIER_SECONDS
+        value: "60"
+      - name: DISTRIBUTED_TEARDOWN_GRACE_SECONDS
+        value: "30"
+      - name: MAX_CONNECTIONS
+        value: "10000"
+      - name: CONNECTIONS_PER_SECOND
+        value: "100"
+      - name: STABILIZATION_SECONDS
+        value: "900"
+      - name: INITIAL_SYNC_TIMEOUT_SECONDS
+        value: "900"
+      - name: INITIAL_SYNC_P99_MS
+        value: "900000"
+      - name: HOLD_DURATION_SECONDS
+        value: "600"
+      - name: DRAIN_DURATION_SECONDS
+        value: "10"
+      - name: GOMEMLIMIT
+        value: 9GiB
+      - name: K6_SUMMARY_EXPORT
+        value: /results/$(POD_NAME)-summary.json
+      - name: K6_WEB_DASHBOARD
+        value: "true"
+      - name: K6_WEB_DASHBOARD_HOST
+        value: "0.0.0.0"
+      - name: K6_WEB_DASHBOARD_PORT
+        value: "5665"
+      - name: K6_WEB_DASHBOARD_EXPORT
+        value: /results/$(POD_NAME)-report.html
+    volumeMounts:
+      - name: results
+        mountPath: /results
+      - name: environment-secret
+        mountPath: /var/run/featbit-loadtest
+        readOnly: true
+    volumes:
+      - name: results
+        persistentVolumeClaim:
+          claimName: featbit-k6-results
+      - name: environment-secret
+        secret:
+          secretName: featbit-k6-flagset-3k-g5-v1-secret
+          items:
+            - key: environments.json
+              path: environments.json

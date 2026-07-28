@@ -3,4 +3,6 @@
 **/.terraform
 node_modules
 results
+**/bin
+**/obj
 *.tfplan

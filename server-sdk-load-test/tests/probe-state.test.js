@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createProbeStateFixture } from "./helpers/probe-fixtures.js";
+import {
+  applyProbeSnapshot,
+  createProbeState,
+  initializeProbeState,
+} from "../k6/lib/probe-state.js";
 
 function assertProbeState(state, expected) {
   assert.deepEqual(
@@ -128,4 +133,20 @@ test("marks a skipped expected revision as a sequence error", () => {
     appliedRevision: "rev-002",
     appliedUpdatedAtMs: 2_000,
   });
+});
+
+test("treats a flag-specific global revision index as its first local revision", () => {
+  const state = createProbeState("config-flag", 0, 10, [8]);
+  initializeProbeState(state, { revision: "baseline", updatedAtMs: 1_000 });
+
+  const outcome = applyProbeSnapshot(
+    state,
+    { revision: "rev-009", updatedAtMs: 2_000 },
+    { "rev-009": 8 },
+  );
+
+  assert.equal(outcome.kind, "expected");
+  assert.equal(outcome.revisionIndex, 8);
+  assert.equal(outcome.sequenceError, false);
+  assert.equal(state.seenRevisions[8], true);
 });

@@ -1,6 +1,33 @@
-# Published AKS k6 report artifacts
+# Published AKS Server SDK load-test report artifacts
 
 These files preserve the public evidence selected for the repository README.
+
+## Official .NET SDK 500-client / 3,000-flag pilot
+
+This retained validation uses 20 Pods × 25 real `FbClient` instances from
+`FeatBit.ServerSdk` 1.2.11. It schedules 500 clients at 20/s against one
+Environment containing 2,500 string flags and 500 2,048-byte JSON flags.
+All clients initialized 57 ms after the 25-second ramp boundary; both warm-up
+patches and all ten formal revisions reached every client.
+
+It is a successful 500-client official-SDK baseline, not a successful rerun
+of the failed 10,000-client large-flagset capacity experiment.
+
+- [Complete pilot report](aks-500-single-env-3k-flags-dotnet-sdk-pilot.md)
+- [Machine-readable pilot result](aks-500-single-env-3k-flags-dotnet-sdk-pilot.json)
+- [Exact pilot matrix](../../k8s-infra/matrices/aks-single-environment-3k-flags-dotnet-sdk-p500-els-expanded.json)
+- [Official .NET runner contract](../../dotnet-sdk-runner/README.md)
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Report Markdown | `3f7be46d38039b5268ce46be8a66e928745e6e65a2785901a391aa48262301d4` |
+| Report JSON | `ac4894508234c98955e4f1a8e94ac0a53b5ec5c93ad09dc55dcf37018a362593` |
+| Matrix JSON | `31a6acb4090d9c68c8fc31faa0260aead1975c9999d414242d1b6ac69b10aafc` |
+| Runner README | `994e2733487ee28f60b12d8c805133a21ddbb56785a4b788ba2980481df0acd3` |
+
+The exact successful run ID is
+`growth-f3k-dotnet-p500-v-20260728130543-8b66`. Failed attempts remain
+separate under the ignored `results/` tree and were not renamed.
 
 ## Multi-environment G5 baseline
 

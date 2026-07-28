@@ -16,6 +16,8 @@ param(
     [ValidateRange(3, 720)]
     [int] $MaxConsecutiveSampleErrors = 120,
 
+    [string] $IncludedNodePools = "system,featbit,loadgen",
+
     [string] $OutputDirectory = ""
 )
 
@@ -129,6 +131,22 @@ function Update-Peak {
 
 $targetContext = $KubeContext.Trim()
 Assert-KubernetesContext -KubeContext $targetContext
+$includedPhysicalPools = @(
+    $IncludedNodePools.Split(
+        ",",
+        [StringSplitOptions]::RemoveEmptyEntries -bor
+            [StringSplitOptions]::TrimEntries
+    ) |
+        Sort-Object -Unique
+)
+if (
+    $includedPhysicalPools.Count -lt 1 -or
+    @($includedPhysicalPools | Where-Object {
+        $_ -notmatch "^[a-z0-9]{1,12}$"
+    }).Count -gt 0
+) {
+    throw "IncludedNodePools must be a comma-separated list of AKS pool names."
+}
 
 $testRunName = "featbit-$RunId"
 Assert-KubernetesObjectExists `
@@ -161,11 +179,23 @@ $nodes = Invoke-KubectlJson `
 $nodePools = @{}
 foreach ($node in $nodes.items) {
     $poolProperty = $node.metadata.labels.PSObject.Properties["agentpool"]
-    $nodePools[[string]$node.metadata.name] = if ($null -eq $poolProperty) {
+    $physicalPool = if ($null -eq $poolProperty) {
         "unknown"
     }
     else {
         [string]$poolProperty.Value
+    }
+    if ($physicalPool -notin $includedPhysicalPools) {
+        continue
+    }
+    $functionalPool = switch ($physicalPool) {
+        "loadgen3k" { "loadgen" }
+        "els3k" { "featbit" }
+        default { $physicalPool }
+    }
+    $nodePools[[string]$node.metadata.name] = [pscustomobject]@{
+        physical = $physicalPool
+        functional = $functionalPool
     }
 }
 
@@ -215,15 +245,11 @@ do {
         $nodeRows = @()
         foreach ($nodeMetric in $nodeMetrics.items) {
             $nodeName = [string]$nodeMetric.metadata.name
-            $pool = if ($nodePools.ContainsKey($nodeName)) {
-                [string]$nodePools[$nodeName]
-            }
-            else {
-                "unknown"
-            }
-            if ($pool -notin @("featbit", "loadgen", "system")) {
+            if (-not $nodePools.ContainsKey($nodeName)) {
                 continue
             }
+            $pool = [string]$nodePools[$nodeName].functional
+            $physicalPool = [string]$nodePools[$nodeName].physical
 
             $cpuMillicores = Convert-CpuToMillicores `
                 -Quantity ([string]$nodeMetric.usage.cpu)
@@ -232,6 +258,7 @@ do {
             $nodeRows += [ordered]@{
                 node = $nodeName
                 nodePool = $pool
+                physicalNodePool = $physicalPool
                 cpuMillicores = $cpuMillicores
                 memoryBytes = $memoryBytes
             }
@@ -241,6 +268,7 @@ do {
                 -Identity ([ordered]@{
                     node = $nodeName
                     nodePool = $pool
+                    physicalNodePool = $physicalPool
                 }) `
                 -CpuMillicores $cpuMillicores `
                 -MemoryBytes $memoryBytes `
@@ -347,6 +375,7 @@ $summary = [ordered]@{
     completedAtUtc = [DateTime]::UtcNow.ToString("o")
     finalStage = $finalStage
     sampleIntervalSeconds = $SampleIntervalSeconds
+    includedPhysicalNodePools = $includedPhysicalPools
     maxConsecutiveSampleErrors = $MaxConsecutiveSampleErrors
     sampleCount = $sampleCount
     sampleErrors = $sampleErrors

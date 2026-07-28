@@ -14,6 +14,15 @@ param(
     [Parameter(Mandatory)]
     [int64] $EndUnixMs,
 
+    [ValidatePattern("^growth-[a-z0-9-]+$")]
+    [string] $SourceRunId = "growth-menv-continuous",
+
+    [ValidatePattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")]
+    [string] $DaemonSetName = "featbit-1s-evidence",
+
+    [ValidateRange(1, 100)]
+    [int] $ExpectedNodeCount = 13,
+
     [string] $OutputDirectory = ""
 )
 
@@ -36,14 +45,126 @@ function Write-Utf8NoBom {
     )
 }
 
+function Read-RemoteResultText {
+    param(
+        [Parameter(Mandatory)][string] $RemotePath,
+        [Parameter(Mandatory)][string] $FailureMessage
+    )
+
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $text = (
+            & kubectl --context $script:targetContext `
+                -n $script:namespace `
+                exec results-reader -- cat $RemotePath 2>$null |
+                Out-String
+        )
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($text)) {
+            return $text
+        }
+        if ($attempt -lt 3) {
+            Start-Sleep -Seconds (2 * $attempt)
+        }
+    }
+    throw $FailureMessage
+}
+
+function Read-RemoteSampleWindow {
+    param(
+        [Parameter(Mandatory)][string] $RemotePath,
+        [Parameter(Mandatory)][string] $WindowStartText,
+        [Parameter(Mandatory)][string] $WindowEndText,
+        [Parameter(Mandatory)][string] $FailureMessage
+    )
+
+    $awkProgram = (
+        'NR == 1 || (' +
+        '"x" $1 >= "x" start && "x" $1 <= "x" end' +
+        ')'
+    )
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $text = (
+            & kubectl --context $script:targetContext `
+                -n $script:namespace `
+                exec results-reader -- `
+                awk -F "`t" `
+                    -v "start=$WindowStartText" `
+                    -v "end=$WindowEndText" `
+                    $awkProgram `
+                    $RemotePath 2>$null |
+                Out-String
+        )
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($text)) {
+            return $text
+        }
+        if ($attempt -lt 3) {
+            Start-Sleep -Seconds (2 * $attempt)
+        }
+    }
+    throw $FailureMessage
+}
+
+function Copy-LocalEvidenceToPvc {
+    param(
+        [Parameter(Mandatory)][string] $LocalPath,
+        [Parameter(Mandatory)][string] $RemoteName
+    )
+
+    $localDirectory = Split-Path -Parent $LocalPath
+    $localName = Split-Path -Leaf $LocalPath
+    Push-Location $localDirectory
+    try {
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            & kubectl --context $script:targetContext `
+                -n $script:namespace `
+                cp ".\$localName" "results-reader:/results/$RemoteName" `
+                *> $null
+            if ($LASTEXITCODE -eq 0) {
+                return
+            }
+            if ($attempt -lt 3) {
+                Start-Sleep -Seconds (2 * $attempt)
+            }
+        }
+    }
+    finally {
+        Pop-Location
+    }
+    throw "Failed to publish '$RemoteName' to the results PVC."
+}
+
+function Invoke-CollectorFlush {
+    param(
+        [Parameter(Mandatory)][string] $PodName,
+        [Parameter(Mandatory)][string] $PublishCommand
+    )
+
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        & kubectl --context $script:targetContext `
+            -n $script:namespace `
+            exec $PodName -- sh -c $PublishCommand *> $null
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+        if ($attempt -lt 3) {
+            Start-Sleep -Seconds (2 * $attempt)
+        }
+    }
+    throw (
+        "Failed to flush one-second evidence from '$PodName' " +
+        "after three attempts."
+    )
+}
+
 if ($EndUnixMs -le $StartUnixMs) {
     throw "EndUnixMs must be greater than StartUnixMs."
 }
 
 $targetContext = $KubeContext.Trim()
 $namespace = $script:LoadTestNamespace
-$continuousRunId = "growth-menv-continuous"
-$daemonSetName = "featbit-1s-evidence"
+$continuousRunId = $SourceRunId
+$daemonSetName = $DaemonSetName
 $repositoryRoot = Get-RepositoryRoot
 $resultsDirectory = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     Join-Path $repositoryRoot "results"
@@ -77,9 +198,13 @@ $readyPods = @($pods | Where-Object {
         @($_.status.containerStatuses).Count
 })
 $nodes = @($readyPods.spec.nodeName | Sort-Object -Unique)
-if ($readyPods.Count -ne 13 -or $nodes.Count -ne 13) {
+if (
+    $readyPods.Count -ne $ExpectedNodeCount -or
+    $nodes.Count -ne $ExpectedNodeCount
+) {
     throw (
-        "Expected 13 ready continuous collectors on 13 nodes; found " +
+        "Expected $ExpectedNodeCount ready continuous collectors on " +
+        "$ExpectedNodeCount nodes; found " +
         "$($readyPods.Count) Pods on $($nodes.Count) nodes."
     )
 }
@@ -97,61 +222,82 @@ foreach ($pod in $readyPods) {
         "cp /buffer/{1} /results/{1}.partial && " +
         "mv /results/{1}.partial /results/{1}"
     ) -f $samplesName, $metadataName
-    & kubectl --context $targetContext `
-        -n $namespace `
-        exec $podName -- sh -c $publishCommand *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to flush one-second evidence from '$podName'."
-    }
+    Invoke-CollectorFlush `
+        -PodName $podName `
+        -PublishCommand $publishCommand
 }
 
 $windowStart = [DateTimeOffset]::FromUnixTimeMilliseconds(
     $StartUnixMs - 5000
 )
 $windowEnd = [DateTimeOffset]::FromUnixTimeMilliseconds($EndUnixMs + 5000)
+$windowStartText = $windowStart.UtcDateTime.ToString(
+    "yyyy-MM-ddTHH:mm:ssZ",
+    [Globalization.CultureInfo]::InvariantCulture
+)
+$windowEndText = $windowEnd.UtcDateTime.ToString(
+    "yyyy-MM-ddTHH:mm:ssZ",
+    [Globalization.CultureInfo]::InvariantCulture
+)
 $written = [Collections.Generic.List[object]]::new()
 
 foreach ($node in $nodes) {
     $nodeToken = ([string]$node) -replace "[^A-Za-z0-9._-]", "_"
     $sourceSamplesName = "$continuousRunId-node-$nodeToken-1s.tsv"
     $sourceMetadataName = "$continuousRunId-node-$nodeToken-metadata.txt"
-    $samplesText = (
-        & kubectl --context $targetContext `
-            -n $namespace `
-            exec results-reader -- `
-            cat "/results/$sourceSamplesName" |
-            Out-String
-    )
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($samplesText)) {
-        throw "Failed to read continuous one-second samples for '$node'."
-    }
-    $metadataText = (
-        & kubectl --context $targetContext `
-            -n $namespace `
-            exec results-reader -- `
-            cat "/results/$sourceMetadataName" |
-            Out-String
-    )
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($metadataText)) {
-        throw "Failed to read continuous one-second metadata for '$node'."
-    }
+    $samplesText = Read-RemoteSampleWindow `
+        -RemotePath "/results/$sourceSamplesName" `
+        -WindowStartText $windowStartText `
+        -WindowEndText $windowEndText `
+        -FailureMessage (
+            "Failed to read continuous one-second samples for '$node'."
+        )
+    $metadataText = Read-RemoteResultText `
+        -RemotePath "/results/$sourceMetadataName" `
+        -FailureMessage (
+            "Failed to read continuous one-second metadata for '$node'."
+        )
 
     $lines = @($samplesText -split "\r?\n")
     if ($lines.Count -lt 2 -or $lines[0] -notmatch "^observed_at_utc`t") {
         throw "Continuous one-second samples for '$node' have an invalid header."
     }
+    $lastNonBlankLineIndex = -1
+    for ($lineIndex = $lines.Count - 1; $lineIndex -ge 1; $lineIndex--) {
+        if (-not [string]::IsNullOrWhiteSpace($lines[$lineIndex])) {
+            $lastNonBlankLineIndex = $lineIndex
+            break
+        }
+    }
     $selected = [Collections.Generic.List[string]]::new()
     $selected.Add($lines[0])
-    foreach ($line in $lines | Select-Object -Skip 1) {
+    $ignoredTruncatedTrailingSamples = 0
+    for ($lineIndex = 1; $lineIndex -lt $lines.Count; $lineIndex++) {
+        $line = $lines[$lineIndex]
         if ([string]::IsNullOrWhiteSpace($line)) {
             continue
         }
         $timestampText = ($line -split "`t", 2)[0]
-        $timestamp = [DateTimeOffset]::Parse(
+        $timestamp = [DateTimeOffset]::MinValue
+        $timestampValid = [DateTimeOffset]::TryParse(
             $timestampText,
             [Globalization.CultureInfo]::InvariantCulture,
-            [Globalization.DateTimeStyles]::AssumeUniversal
+            [Globalization.DateTimeStyles]::AssumeUniversal,
+            [ref]$timestamp
         )
+        if (-not $timestampValid) {
+            if ($lineIndex -eq $lastNonBlankLineIndex) {
+                # The collector is still appending while its buffer is copied.
+                # Only a single partial final line is safe to ignore.
+                $ignoredTruncatedTrailingSamples++
+                continue
+            }
+            throw (
+                "Continuous one-second samples for '$node' contain an " +
+                "invalid timestamp before the final data line: " +
+                "'$timestampText'."
+            )
+        }
         if ($timestamp -ge $windowStart -and $timestamp -le $windowEnd) {
             $selected.Add($line)
         }
@@ -168,7 +314,11 @@ foreach ($node in $nodes) {
         ($metadataText.Trim() -replace "(?m)^run_id=.*$", "run_id=$RunId") +
         "`nsource_continuous_run_id=$continuousRunId`n" +
         "window_start_utc=$($windowStart.ToString('o'))`n" +
-        "window_end_utc=$($windowEnd.ToString('o'))`n"
+        "window_end_utc=$($windowEnd.ToString('o'))`n" +
+        (
+            "ignored_truncated_trailing_sample_count=" +
+            "$ignoredTruncatedTrailingSamples`n"
+        )
     )
     Write-Utf8NoBom `
         -Path $runSamplesPath `
@@ -189,31 +339,23 @@ foreach ($node in $nodes) {
                 "'/results/$($file.Name)'."
             )
         }
-        Push-Location $resultsDirectory
-        try {
-            & kubectl --context $targetContext `
-                -n $namespace `
-                cp ".\$($file.Name)" "results-reader:/results/$($file.Name)"
-            $copyExitCode = $LASTEXITCODE
-        }
-        finally {
-            Pop-Location
-        }
-        if ($copyExitCode -ne 0) {
-            throw "Failed to publish '$($file.Name)' to the results PVC."
-        }
+        Copy-LocalEvidenceToPvc `
+            -LocalPath $file.Path `
+            -RemoteName $file.Name
     }
 
     $written.Add([ordered]@{
         node = [string]$node
         samples = $selected.Count - 1
+        ignoredTruncatedTrailingSamples = $ignoredTruncatedTrailingSamples
         samplesPath = $runSamplesPath
         metadataPath = $runMetadataPath
     })
 }
 
 Write-Host (
-    "One-second evidence window published for 13 nodes; the continuous " +
+    "One-second evidence window published for $ExpectedNodeCount nodes; " +
+    "the continuous " +
     "collector was preserved."
 ) -ForegroundColor Green
 [pscustomobject]@{

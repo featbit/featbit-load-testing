@@ -368,10 +368,10 @@ foreach ($nodeFile in $nodeFiles) {
         throw "Could not parse node name from '$($nodeFile.Name)'."
     }
     $node = $nodeMatch.Groups["node"].Value
-    $nodePool = if ($node -match "^aks-loadgen-") {
+    $nodePool = if ($node -match "^aks-(loadgen|loadgen3k)-") {
         "loadgen"
     }
-    elseif ($node -match "^aks-featbit-") {
+    elseif ($node -match "^aks-(featbit|els3k)-") {
         "featbit"
     }
     else {

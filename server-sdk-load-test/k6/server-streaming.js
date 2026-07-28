@@ -7,7 +7,7 @@ import { WebSocket } from "k6/websockets";
 import {
   buildFeatureFlagUrl,
   buildTargetingUpdate,
-  getDeterministicServedValue,
+  getDeterministicServedRevision,
   normalizeApiBaseUrl,
   validateControllerFlag,
 } from "./lib/api-controller.js";
@@ -30,10 +30,12 @@ import {
 import {
   extractProbeSnapshot,
   findFeatureFlag,
+  indexFeatureFlags,
   parseExpectedRevisions,
   parseProbeFlagKeys,
   parseStreamingMessage,
 } from "./lib/probe.js";
+import { buildRevisionPlan } from "./lib/revision-plan.js";
 import {
   applyProbeSnapshot,
   createProbeState,
@@ -87,9 +89,24 @@ const MULTI_ENVIRONMENT_CONFIG = MULTI_ENVIRONMENT_MODE
         },
       ],
     };
-const PROBE_FLAG_KEYS = parseProbeFlagKeys(
+const CONFIGURED_PROBE_FLAG_KEYS = parseProbeFlagKeys(
   __ENV.PROBE_FLAG_KEYS ?? __ENV.PROBE_FLAG_KEY ?? "loadtest-sync-probe",
 );
+const CONFIGURED_EXPECTED_REVISIONS = parseExpectedRevisions(__ENV.EXPECTED_REVISIONS);
+// The k6 Operator archives the script in an initializer that intentionally
+// does not inherit runner environment variables. Keep module evaluation
+// archive-safe, then let setup() reject a real execution without the required
+// EXPECTED_REVISIONS contract.
+const ARCHIVE_SAFE_EXPECTED_REVISIONS =
+  CONFIGURED_EXPECTED_REVISIONS.length > 0
+    ? CONFIGURED_EXPECTED_REVISIONS
+    : ["__k6_archive_placeholder_revision__"];
+const REVISION_PLAN = buildRevisionPlan(
+  __ENV.REVISION_PLAN_JSON,
+  CONFIGURED_PROBE_FLAG_KEYS,
+  ARCHIVE_SAFE_EXPECTED_REVISIONS,
+);
+const PROBE_FLAG_KEYS = REVISION_PLAN.flagKeys;
 const VALIDATED_FLAG_KEYS = parseProbeFlagKeys(
   __ENV.VALIDATED_FLAG_KEYS ??
     [
@@ -103,7 +120,7 @@ const POST_RAMP_WARMUP_FLAG_KEY = String(
   __ENV.POST_RAMP_WARMUP_FLAG_KEY ?? "",
 ).trim();
 const PROBE_INITIAL_VALUE = String(__ENV.PROBE_INITIAL_VALUE ?? "baseline").trim();
-const EXPECTED_REVISIONS = parseExpectedRevisions(__ENV.EXPECTED_REVISIONS);
+const EXPECTED_REVISIONS = REVISION_PLAN.revisions;
 const EXPECTED_REVISION_INDEX = Object.fromEntries(
   EXPECTED_REVISIONS.map((revision, index) => [revision, index]),
 );
@@ -135,6 +152,11 @@ const DRAIN_DURATION_SECONDS = integerEnv("DRAIN_DURATION_SECONDS", 10, 2);
 
 const PING_INTERVAL_SECONDS = integerEnv("PING_INTERVAL_SECONDS", 15);
 const INITIAL_SYNC_TIMEOUT_SECONDS = integerEnv("INITIAL_SYNC_TIMEOUT_SECONDS", 20);
+const EXPECTED_FULL_SYNC_FLAG_COUNT = integerEnv(
+  "EXPECTED_FULL_SYNC_FLAG_COUNT",
+  0,
+  0,
+);
 const HEARTBEAT_TIMEOUT_SECONDS = integerEnv(
   "HEARTBEAT_TIMEOUT_SECONDS",
   PING_INTERVAL_SECONDS * 3,
@@ -184,8 +206,6 @@ const PING_INTERVAL_MS = PING_INTERVAL_SECONDS * 1_000;
 const INITIAL_SYNC_TIMEOUT_MS = INITIAL_SYNC_TIMEOUT_SECONDS * 1_000;
 const HEARTBEAT_TIMEOUT_MS = HEARTBEAT_TIMEOUT_SECONDS * 1_000;
 const FINALIZE_GRACE_MS = 1_000;
-const REQUIRED_PROBE_VALUES = [PROBE_INITIAL_VALUE, ...EXPECTED_REVISIONS];
-
 const FULL_DATA_SYNC_MESSAGE = JSON.stringify({
   messageType: "data-sync",
   data: { timestamp: 0 },
@@ -223,6 +243,7 @@ const postRampWarmupPatchReceived = new Counter(
 );
 const crossEnvironmentDelivery = new Counter("cross_environment_delivery");
 const backgroundConnectionChecked = new Counter("background_connection_checked");
+const fullSyncFlagCountMismatch = new Counter("full_sync_flag_count_mismatch");
 
 const connectionOpenSuccess = new Rate("connection_open_success");
 const initialSyncSuccess = new Rate("initial_sync_success");
@@ -240,6 +261,30 @@ const probeUpdatedAtToSdkOver100Ms = new Rate("probe_updated_at_to_sdk_over_100m
 
 const connectionOpenLatency = new Trend("connection_open_latency_ms", true);
 const initialSyncLatency = new Trend("initial_sync_latency_ms", true);
+const initialSyncAfterOpenLatency = new Trend(
+  "initial_sync_after_open_latency_ms",
+  true,
+);
+const connectionStartScheduleDrift = new Trend(
+  "connection_start_schedule_drift_ms",
+  true,
+);
+const connectionOpenScheduleDrift = new Trend(
+  "connection_open_schedule_drift_ms",
+  true,
+);
+const initialSyncScheduleDrift = new Trend(
+  "initial_sync_schedule_drift_ms",
+  true,
+);
+const fullSyncPayloadBytes = new Trend("full_sync_payload_bytes");
+const fullSyncFeatureFlagCount = new Trend("full_sync_feature_flag_count");
+const fullSyncSegmentCount = new Trend("full_sync_segment_count");
+const fullSyncParseLatency = new Trend("full_sync_parse_latency_ms", true);
+const fullSyncValidationLatency = new Trend(
+  "full_sync_validation_latency_ms",
+  true,
+);
 const postRampWarmupLatency = new Trend("post_ramp_warmup_latency_ms", true);
 // This raw clock starts at FeatureFlag.UpdatedAt, which is earlier than the
 // Redis publication boundary. The post-run stage analyzer subtracts the
@@ -265,6 +310,7 @@ const ZERO_VALUE_COUNTERS = [
   unexpectedRevision,
   clockSkewDetected,
   crossEnvironmentDelivery,
+  fullSyncFlagCountMismatch,
 ];
 
 if (STRICT_PATCH_DELIVERY) {
@@ -297,6 +343,7 @@ const thresholds = {
   connection_open_failure: ["count==0"],
   initial_sync_failure: ["count==0"],
   cross_environment_delivery: ["count==0"],
+  full_sync_flag_count_mismatch: ["count==0"],
   initial_sync_latency_ms: [`p(99)<${INITIAL_SYNC_P99_MS}`],
 };
 
@@ -357,7 +404,10 @@ if (AUTO_CONTROL_REVISIONS && LOADTEST_PARALLELISM === 1) {
   thresholds.controller_update_success = ["rate==1"];
   thresholds.controller_warmup_updates = [`count==${PROBE_FLAG_KEYS.length * 2}`];
   thresholds.controller_revision_updates = [
-    `count==${PROBE_FLAG_KEYS.length * EXPECTED_REVISIONS.length}`,
+    `count==${REVISION_PLAN.steps.reduce(
+      (sum, step) => sum + step.flagKeys.length,
+      0,
+    )}`,
   ];
 }
 
@@ -432,6 +482,28 @@ function logConnectionReady(state, atMs) {
       state.environment.id,
       String(state.runnerIndex),
       String(state.localConnectionIndex),
+    ].join("|"),
+  );
+}
+
+function logInitialSync(state, measurement) {
+  console.log(
+    [
+      "STREAM_SYNC",
+      "1",
+      String(measurement.completedAtMs),
+      RUN_ID,
+      state.environment.id,
+      String(state.runnerIndex),
+      String(state.localConnectionIndex),
+      String(state.scheduledStartAtMs),
+      String(state.iterationStartedAtMs),
+      String(state.openedAtMs),
+      String(measurement.payloadBytes),
+      String(measurement.featureFlagCount),
+      String(measurement.segmentCount),
+      String(measurement.parseLatencyMs),
+      String(measurement.validationLatencyMs),
     ].join("|"),
   );
 }
@@ -631,7 +703,12 @@ function getControllerFlag(flagKey) {
   const flag = controllerRequest("GET", flagUrl, undefined, "controller_get_flag", {
     flag_key: flagKey,
   });
-  validateControllerFlag(flag, flagKey, REQUIRED_PROBE_VALUES);
+  validateControllerFlag(
+    flag,
+    flagKey,
+    [PROBE_INITIAL_VALUE, ...REVISION_PLAN.expectedRevisionsByFlag[flagKey]],
+    REVISION_PLAN.variationTypeByFlag[flagKey],
+  );
   return flag;
 }
 
@@ -683,7 +760,7 @@ function setProbeFlagValue(
   try {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const flag = getControllerFlag(flagKey);
-      if (getDeterministicServedValue(flag) === targetValue) {
+      if (getDeterministicServedRevision(flag) === targetValue) {
         if (recordExpectedRevision || recordWarmupUpdate) {
           throw new Error(
             `feature flag '${flagKey}' already served '${targetValue}' before the controller update`,
@@ -696,9 +773,10 @@ function setProbeFlagValue(
       const payload = buildTargetingUpdate(
         flag,
         flagKey,
-        REQUIRED_PROBE_VALUES,
+        [PROBE_INITIAL_VALUE, ...REVISION_PLAN.expectedRevisionsByFlag[flagKey]],
         targetValue,
         `Load test ${RUN_ID}: ${phase}`,
+        REVISION_PLAN.variationTypeByFlag[flagKey],
       );
       const flagUrl = buildFeatureFlagUrl(FEATBIT_API_URL, FEATBIT_ENVIRONMENT_ID, flagKey);
       const revisionIndex = measuredRevisionIndex(phase);
@@ -751,7 +829,7 @@ function setProbeFlagValue(
       }
 
       const verifiedFlag = getControllerFlag(flagKey);
-      const servedValue = getDeterministicServedValue(verifiedFlag);
+      const servedValue = getDeterministicServedRevision(verifiedFlag);
       if (servedValue !== targetValue) {
         throw new Error(
           `feature flag '${flagKey}' served '${servedValue}' after updating it to '${targetValue}'`,
@@ -786,6 +864,18 @@ function setAllProbeFlags(
       targetValue,
       phase,
       recordExpectedRevision,
+      recordWarmupUpdate,
+    );
+  }
+}
+
+function setEachProbeFlagToPlannedRevision(phase, recordWarmupUpdate = false) {
+  for (const flagKey of PROBE_FLAG_KEYS) {
+    setProbeFlagValue(
+      flagKey,
+      REVISION_PLAN.expectedRevisionsByFlag[flagKey][0],
+      phase,
+      false,
       recordWarmupUpdate,
     );
   }
@@ -840,6 +930,20 @@ export function setup() {
   }
   if (PROBE_FLAG_KEYS.length === 0) {
     errors.push("PROBE_FLAG_KEYS must contain at least one key");
+  }
+  if (
+    CONFIGURED_PROBE_FLAG_KEYS.length !== PROBE_FLAG_KEYS.length ||
+    CONFIGURED_PROBE_FLAG_KEYS.some((key) => !PROBE_FLAG_KEYS.includes(key))
+  ) {
+    errors.push("PROBE_FLAG_KEYS must match the flags in REVISION_PLAN_JSON");
+  }
+  if (
+    CONFIGURED_EXPECTED_REVISIONS.length !== EXPECTED_REVISIONS.length ||
+    CONFIGURED_EXPECTED_REVISIONS.some(
+      (revision, index) => revision !== EXPECTED_REVISIONS[index],
+    )
+  ) {
+    errors.push("EXPECTED_REVISIONS must match REVISION_PLAN_JSON order");
   }
   if (VALIDATED_FLAG_KEYS.length === 0) {
     errors.push("VALIDATED_FLAG_KEYS must contain at least one key");
@@ -923,12 +1027,11 @@ export function setup() {
     console.log(`[controller] restoring ${PROBE_FLAG_KEYS.length} probe flag(s) to baseline`);
     setAllProbeFlags(PROBE_INITIAL_VALUE, "pre-run baseline");
 
-    const warmupRevision = EXPECTED_REVISIONS[0];
     console.log(
       `[controller] pre-warming ${PROBE_FLAG_KEYS.length} probe flag(s): ` +
-        `${PROBE_INITIAL_VALUE} -> ${warmupRevision} -> ${PROBE_INITIAL_VALUE}`,
+        `${PROBE_INITIAL_VALUE} -> planned revision -> ${PROBE_INITIAL_VALUE}`,
     );
-    setAllProbeFlags(warmupRevision, "pre-run warm-up revision", false, true);
+    setEachProbeFlagToPlannedRevision("pre-run warm-up revision", true);
     if (CONTROLLER_WARMUP_SETTLE_SECONDS > 0) {
       sleep(CONTROLLER_WARMUP_SETTLE_SECONDS);
     }
@@ -1025,14 +1128,21 @@ export function controlProbeRevisions(data) {
       }
     }
 
-    for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
-      const revision = EXPECTED_REVISIONS[index];
+    for (let index = 0; index < REVISION_PLAN.steps.length; index += 1) {
+      const step = REVISION_PLAN.steps[index];
       console.log(
-        `[controller] applying ${revision} to ${PROBE_FLAG_KEYS.length} probe flag(s)`,
+        `[controller] applying ${step.revision} to ${step.flagKeys.length} probe flag(s)`,
       );
-      setAllProbeFlags(revision, `measured revision ${index + 1}`, true);
+      for (const flagKey of step.flagKeys) {
+        setProbeFlagValue(
+          flagKey,
+          step.revision,
+          `measured revision ${index + 1}`,
+          true,
+        );
+      }
 
-      if (index < EXPECTED_REVISIONS.length - 1) {
+      if (index < REVISION_PLAN.steps.length - 1) {
         sleep(CONTROLLER_REVISION_INTERVAL_SECONDS);
       }
     }
@@ -1091,6 +1201,12 @@ export default function (data) {
   const plannedCloseAt = holdStartsAt + HOLD_DURATION_MS;
   const scenarioEndsAt = plannedCloseAt + DRAIN_DURATION_MS;
   const iterationStartedAt = Date.now();
+  const scheduledStartAt =
+    scenarioStartAt +
+    (localConnectionIndex / EXPECTED_CONNECTIONS_PER_RUNNER) * RAMP_UP_MS;
+  connectionStartScheduleDrift.add(iterationStartedAt - scheduledStartAt, {
+    runner_index: String(runnerIndex),
+  });
 
   // A VU can be asked for another iteration while the executor drains. Never open a second socket.
   if (iterationStartedAt >= plannedCloseAt) {
@@ -1115,12 +1231,20 @@ export default function (data) {
     crossEnvironmentDelivery: false,
     lastPongAt: null,
     lastPingSentAt: null,
+    scheduledStartAtMs: scheduledStartAt,
+    iterationStartedAtMs: iterationStartedAt,
+    openedAtMs: null,
     runnerIndex,
     localConnectionIndex,
     environment,
     isTargetEnvironment,
     probes: PROBE_FLAG_KEYS.map((key, index) => ({
-      ...createProbeState(key, index, EXPECTED_REVISIONS.length),
+      ...createProbeState(
+        key,
+        index,
+        EXPECTED_REVISIONS.length,
+        REVISION_PLAN.expectedRevisionIndexesByFlag[key],
+      ),
       environmentId: environment.id,
       environmentIndex: environment.index,
       runnerIndex,
@@ -1178,8 +1302,12 @@ export default function (data) {
 
     if (state.isTargetEnvironment) {
       for (let index = 0; index < EXPECTED_REVISIONS.length; index += 1) {
+        const expectedProbeStates = state.probes.filter((probeState) =>
+          probeState.expectedRevisionIndexes.includes(index),
+        );
         probeRevisionCoverage.add(
-          state.probes.every((probeState) => probeState.seenRevisions[index]),
+          expectedProbeStates.length > 0 &&
+            expectedProbeStates.every((probeState) => probeState.seenRevisions[index]),
           {
             revision_index: String(index + 1),
             revision: EXPECTED_REVISIONS[index],
@@ -1191,7 +1319,7 @@ export default function (data) {
         state.probes.every(
           (probeState) =>
             probeState.appliedRevision ===
-            EXPECTED_REVISIONS[EXPECTED_REVISIONS.length - 1],
+            REVISION_PLAN.finalRevisionByFlag[probeState.key],
         ),
       );
     } else if (MULTI_ENVIRONMENT_MODE) {
@@ -1221,9 +1349,13 @@ export default function (data) {
     socket.onopen = () => {
       const now = Date.now();
       state.opened = true;
+      state.openedAtMs = now;
       state.lastPongAt = now;
       connectionOpened.add(1);
       connectionOpenLatency.add(now - iterationStartedAt);
+      connectionOpenScheduleDrift.add(now - state.scheduledStartAtMs, {
+        runner_index: String(runnerIndex),
+      });
 
       socket.send(FULL_DATA_SYNC_MESSAGE);
 
@@ -1259,6 +1391,7 @@ export default function (data) {
     };
 
     socket.onmessage = (event) => {
+      const parseStartedAt = Date.now();
       let message;
       try {
         message = parseStreamingMessage(event.data);
@@ -1266,6 +1399,7 @@ export default function (data) {
         reportInvalid(state, error.message);
         return;
       }
+      const parseCompletedAt = Date.now();
 
       if (message.kind === "ignored") {
         return;
@@ -1288,12 +1422,49 @@ export default function (data) {
           return;
         }
 
-        state.initialSyncAt = Date.now();
         let allProbeConfigsValid = true;
         const initialSnapshots = new Map();
+        let featureFlagsByKey;
+
+        fullSyncPayloadBytes.add(message.rawBytes, {
+          runner_index: String(runnerIndex),
+        });
+        fullSyncFeatureFlagCount.add(message.featureFlags.length, {
+          runner_index: String(runnerIndex),
+        });
+        fullSyncSegmentCount.add(message.segments.length, {
+          runner_index: String(runnerIndex),
+        });
+        fullSyncParseLatency.add(parseCompletedAt - parseStartedAt, {
+          runner_index: String(runnerIndex),
+        });
+        if (
+          EXPECTED_FULL_SYNC_FLAG_COUNT > 0 &&
+          message.featureFlags.length !== EXPECTED_FULL_SYNC_FLAG_COUNT
+        ) {
+          allProbeConfigsValid = false;
+          fullSyncFlagCountMismatch.add(1, {
+            actual: String(message.featureFlags.length),
+            expected: String(EXPECTED_FULL_SYNC_FLAG_COUNT),
+            runner_index: String(runnerIndex),
+          });
+          reportInvalid(
+            state,
+            `full data-sync contained ${message.featureFlags.length} flags; ` +
+              `expected ${EXPECTED_FULL_SYNC_FLAG_COUNT}`,
+          );
+        }
+
+        try {
+          featureFlagsByKey = indexFeatureFlags(message.featureFlags);
+        } catch (error) {
+          allProbeConfigsValid = false;
+          reportInvalid(state, error.message);
+          featureFlagsByKey = new Map();
+        }
 
         for (const flagKey of VALIDATED_FLAG_KEYS) {
-          const probeFlag = findFeatureFlag(message.featureFlags, flagKey);
+          const probeFlag = featureFlagsByKey.get(flagKey);
           if (!probeFlag) {
             allProbeConfigsValid = false;
             reportInvalid(
@@ -1329,8 +1500,29 @@ export default function (data) {
 
         state.initialSyncValid = allProbeConfigsValid;
         state.initialValuesValid = allProbeConfigsValid;
+        const validationCompletedAt = Date.now();
+        state.initialSyncAt = validationCompletedAt;
+        fullSyncValidationLatency.add(validationCompletedAt - parseCompletedAt, {
+          runner_index: String(runnerIndex),
+        });
         if (state.initialSyncValid) {
-          initialSyncLatency.add(state.initialSyncAt - iterationStartedAt);
+          initialSyncLatency.add(validationCompletedAt - iterationStartedAt);
+          initialSyncAfterOpenLatency.add(
+            validationCompletedAt - state.openedAtMs,
+            { runner_index: String(runnerIndex) },
+          );
+          initialSyncScheduleDrift.add(
+            validationCompletedAt - state.scheduledStartAtMs,
+            { runner_index: String(runnerIndex) },
+          );
+          logInitialSync(state, {
+            completedAtMs: validationCompletedAt,
+            payloadBytes: message.rawBytes,
+            featureFlagCount: message.featureFlags.length,
+            segmentCount: message.segments.length,
+            parseLatencyMs: parseCompletedAt - parseStartedAt,
+            validationLatencyMs: validationCompletedAt - parseCompletedAt,
+          });
           logConnectionReady(state, state.initialSyncAt);
         }
         return;

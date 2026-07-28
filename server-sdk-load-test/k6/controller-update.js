@@ -8,7 +8,7 @@ import {
 import {
   buildFeatureFlagUrl,
   buildTargetingUpdate,
-  getDeterministicServedValue,
+  getDeterministicServedRevision,
   normalizeApiBaseUrl,
   validateControllerFlag,
 } from "./lib/api-controller.js";
@@ -40,14 +40,27 @@ const API_URL = normalizeApiBaseUrl(requiredString("FEATBIT_API_URL"));
 const ACCESS_TOKEN = requiredString("FEATBIT_API_ACCESS_TOKEN");
 const ENVIRONMENT_ID = requiredString("FEATBIT_ENVIRONMENT_ID");
 const FLAG_KEY = requiredString("CONTROLLER_FLAG_KEY");
-const TARGET_VALUE = requiredString("CONTROLLER_TARGET_VALUE");
+const TARGET_REVISION = String(
+  __ENV.CONTROLLER_TARGET_REVISION ?? __ENV.CONTROLLER_TARGET_VALUE ?? "",
+).trim();
+if (!TARGET_REVISION) {
+  throw new Error("CONTROLLER_TARGET_REVISION is required");
+}
 const PHASE = requiredString("CONTROLLER_PHASE");
 const RUN_ID = requiredString("RUN_ID");
 const REVISION_INDEX = integerEnv("CONTROLLER_REVISION_INDEX");
 const DUE_UNIX_MS = integerEnv("CONTROLLER_DUE_UNIX_MS");
 const INITIAL_VALUE = String(__ENV.PROBE_INITIAL_VALUE ?? "baseline").trim();
 const EXPECTED_REVISIONS = parseExpectedRevisions(__ENV.EXPECTED_REVISIONS);
-const REQUIRED_VALUES = [INITIAL_VALUE, ...EXPECTED_REVISIONS];
+const REQUIRED_REVISIONS = [
+  INITIAL_VALUE,
+  ...parseExpectedRevisions(
+    __ENV.CONTROLLER_REQUIRED_REVISIONS ?? EXPECTED_REVISIONS.join(","),
+  ),
+];
+const EXPECTED_VARIATION_TYPE = String(
+  __ENV.CONTROLLER_VARIATION_TYPE ?? "",
+).trim();
 const ALLOW_ALREADY_SERVED = booleanEnv("CONTROLLER_ALLOW_ALREADY_SERVED");
 
 export const options = {
@@ -72,7 +85,7 @@ function logTiming(event, atMs, attempt) {
       RUN_ID,
       ENVIRONMENT_ID,
       String(REVISION_INDEX),
-      TARGET_VALUE,
+      TARGET_REVISION,
       FLAG_KEY,
       String(attempt),
     ].join("|"),
@@ -114,7 +127,12 @@ function request(method, url, body, operation) {
 
 function getFlag(url) {
   const flag = request("GET", url, undefined, "controller_get_flag");
-  validateControllerFlag(flag, FLAG_KEY, REQUIRED_VALUES);
+  validateControllerFlag(
+    flag,
+    FLAG_KEY,
+    REQUIRED_REVISIONS,
+    EXPECTED_VARIATION_TYPE || undefined,
+  );
   return flag;
 }
 
@@ -132,7 +150,7 @@ export default function () {
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     const flag = getFlag(flagUrl);
-    if (getDeterministicServedValue(flag) === TARGET_VALUE) {
+    if (getDeterministicServedRevision(flag) === TARGET_REVISION) {
       if (ALLOW_ALREADY_SERVED) {
         console.log(
           [
@@ -142,7 +160,7 @@ export default function () {
             ENVIRONMENT_ID,
             FLAG_KEY,
             PHASE,
-            TARGET_VALUE,
+            TARGET_REVISION,
             "unchanged",
           ].join("|"),
         );
@@ -156,9 +174,10 @@ export default function () {
     const payload = buildTargetingUpdate(
       flag,
       FLAG_KEY,
-      REQUIRED_VALUES,
-      TARGET_VALUE,
+      REQUIRED_REVISIONS,
+      TARGET_REVISION,
       `Load test ${RUN_ID}: ${PHASE}`,
+      EXPECTED_VARIATION_TYPE || undefined,
     );
     if (!scheduleApplied) {
       const delaySeconds = scheduledControllerDelaySeconds(
@@ -185,8 +204,8 @@ export default function () {
     }
 
     const verified = getFlag(flagUrl);
-    if (getDeterministicServedValue(verified) !== TARGET_VALUE) {
-      throw new Error(`feature flag '${FLAG_KEY}' did not serve the requested value`);
+    if (getDeterministicServedRevision(verified) !== TARGET_REVISION) {
+      throw new Error(`feature flag '${FLAG_KEY}' did not serve the requested revision`);
     }
     console.log(
       [
@@ -196,7 +215,7 @@ export default function () {
         ENVIRONMENT_ID,
         FLAG_KEY,
         PHASE,
-        TARGET_VALUE,
+        TARGET_REVISION,
         "changed",
       ].join("|"),
     );

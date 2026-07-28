@@ -139,6 +139,7 @@ $runnerJobs = @($jobs | Where-Object {
     $_.metadata.name -match "^$([regex]::Escape($testRunName))-\d+$"
 })
 
+$runnerJobEvidence = @()
 foreach ($runnerIndex in 1..$parallelism) {
     $expectedJobName = "$testRunName-$runnerIndex"
     $matchingJobs = @($runnerJobs | Where-Object {
@@ -149,9 +150,10 @@ foreach ($runnerIndex in 1..$parallelism) {
     }
     $runnerJob = $matchingJobs[0]
     $jobComplete = Test-JobComplete -Job $runnerJob
+    $jobFailed = Test-JobFailed -Job $runnerJob
     $diagnosticFailure = (
         $AllowFailedRunners -and
-        (Test-JobFailed -Job $runnerJob)
+        $jobFailed
     )
     if (-not $AllowIncomplete -and -not $jobComplete -and -not $diagnosticFailure) {
         throw (
@@ -159,6 +161,13 @@ foreach ($runnerIndex in 1..$parallelism) {
             "allowed Failed job. Use -AllowFailedRunners only to preserve " +
             "diagnostic artifacts from a finished performance test."
         )
+    }
+    $runnerJobEvidence += [pscustomobject]@{
+        runner = $runnerIndex
+        job = $expectedJobName
+        complete = $jobComplete
+        failed = $jobFailed
+        diagnosticFailureAllowed = $diagnosticFailure
     }
 }
 
@@ -195,21 +204,38 @@ $artifacts = @(
 )
 
 foreach ($runnerIndex in 1..$parallelism) {
+    $runnerJobState = @($runnerJobEvidence | Where-Object {
+        $_.runner -eq $runnerIndex
+    })[0]
     foreach ($kind in @("summary.json", "report.html")) {
         $matches = @($artifacts | Where-Object {
             $_.Runner -eq $runnerIndex -and $_.Kind -ceq $kind
         })
-        if ($matches.Count -ne 1) {
+        if ($matches.Count -gt 1) {
+            throw (
+                "Expected at most one '$kind' artifact for runner $runnerIndex; " +
+                "found $($matches.Count)."
+            )
+        }
+        $missingAllowed = (
+            $AllowIncomplete -or
+            (
+                $AllowFailedRunners -and
+                [bool]$runnerJobState.failed
+            )
+        )
+        if ($matches.Count -eq 0 -and -not $missingAllowed) {
             throw (
                 "Expected exactly one '$kind' artifact for runner $runnerIndex; " +
-                "found $($matches.Count)."
+                "found 0. Missing runner artifacts are accepted only for an " +
+                "incomplete run or an explicitly allowed Failed runner Job."
             )
         }
     }
 }
-if ($artifacts.Count -ne ($parallelism * 2)) {
+if ($artifacts.Count -gt ($parallelism * 2)) {
     throw (
-        "Expected $($parallelism * 2) runner artifacts; " +
+        "Expected at most $($parallelism * 2) runner artifacts; " +
         "found $($artifacts.Count)."
     )
 }
@@ -226,37 +252,39 @@ else {
 $null = New-Item -ItemType Directory -Force -Path $archiveDirectory
 
 $sortedArtifacts = @($artifacts | Sort-Object Runner, Kind)
-$hashArguments = @(
-    "--context", $targetContext,
-    "-n", $namespace,
-    "exec", "results-reader", "--",
-    "sha256sum"
-) + @($sortedArtifacts | ForEach-Object {
-    "/results/$($_.Name)"
-})
-$remoteHashOutput = Invoke-KubectlText `
-    -Arguments $hashArguments `
-    -FailureMessage "Failed to hash remote runner artifacts."
 $remoteHashes = @{}
-foreach ($hashLine in @($remoteHashOutput -split "\r?\n")) {
-    if ([string]::IsNullOrWhiteSpace($hashLine)) {
-        continue
-    }
-    if ($hashLine -notmatch "^(?<Hash>[a-fA-F0-9]{64})\s+(?<Path>.+)$") {
-        throw "Remote artifact hash output contains an invalid line: '$hashLine'."
-    }
+if ($sortedArtifacts.Count -gt 0) {
+    $hashArguments = @(
+        "--context", $targetContext,
+        "-n", $namespace,
+        "exec", "results-reader", "--",
+        "sha256sum"
+    ) + @($sortedArtifacts | ForEach-Object {
+        "/results/$($_.Name)"
+    })
+    $remoteHashOutput = Invoke-KubectlText `
+        -Arguments $hashArguments `
+        -FailureMessage "Failed to hash remote runner artifacts."
+    foreach ($hashLine in @($remoteHashOutput -split "\r?\n")) {
+        if ([string]::IsNullOrWhiteSpace($hashLine)) {
+            continue
+        }
+        if ($hashLine -notmatch "^(?<Hash>[a-fA-F0-9]{64})\s+(?<Path>.+)$") {
+            throw "Remote artifact hash output contains an invalid line: '$hashLine'."
+        }
 
-    $artifactName = [IO.Path]::GetFileName($Matches.Path.TrimStart("*"))
-    if ($remoteHashes.ContainsKey($artifactName)) {
-        throw "Remote artifact hash output contains duplicate '$artifactName'."
+        $artifactName = [IO.Path]::GetFileName($Matches.Path.TrimStart("*"))
+        if ($remoteHashes.ContainsKey($artifactName)) {
+            throw "Remote artifact hash output contains duplicate '$artifactName'."
+        }
+        $remoteHashes[$artifactName] = $Matches.Hash.ToLowerInvariant()
     }
-    $remoteHashes[$artifactName] = $Matches.Hash.ToLowerInvariant()
-}
-if ($remoteHashes.Count -ne $sortedArtifacts.Count) {
-    throw (
-        "Expected $($sortedArtifacts.Count) remote artifact hashes; " +
-        "received $($remoteHashes.Count)."
-    )
+    if ($remoteHashes.Count -ne $sortedArtifacts.Count) {
+        throw (
+            "Expected $($sortedArtifacts.Count) remote artifact hashes; " +
+            "received $($remoteHashes.Count)."
+        )
+    }
 }
 
 $artifactEvidence = @()
@@ -574,6 +602,7 @@ foreach ($sourceSuffix in @(
     "els-pods.json",
     "runner-placement.json",
     "multi-environment-inventory.json",
+    "large-flagset-inventory.json",
     "external-controller-events.jsonl",
     "experiment-events.jsonl",
     "cross-environment-monitor.log",
@@ -632,7 +661,11 @@ $profileName = if ($null -eq $profileLabel) {
 else {
     [string]$profileLabel.Value
 }
-$requiresResourceEvidence = $profileName -in @("growth", "growth-plus")
+$requiresResourceEvidence = $profileName -in @(
+    "growth",
+    "growth-plus",
+    "extreme-large-flagset"
+)
 $resourceSummaryEvidence = @($supplementalEvidence | Where-Object {
     $_.kind -ceq "resource-summary.json"
 })
@@ -657,42 +690,84 @@ else {
 }
 
 $runnerSummaries = @()
-foreach ($artifact in ($artifactEvidence | Where-Object {
-    $_.kind -ceq "summary.json"
-} | Sort-Object runner)) {
-    $summary = Get-Content -Raw -LiteralPath $artifact.path | ConvertFrom-Json
+foreach ($runnerJobState in ($runnerJobEvidence | Sort-Object runner)) {
+    $summaryArtifacts = @($artifactEvidence | Where-Object {
+        $_.runner -eq $runnerJobState.runner -and
+        $_.kind -ceq "summary.json"
+    })
+    $reportArtifacts = @($artifactEvidence | Where-Object {
+        $_.runner -eq $runnerJobState.runner -and
+        $_.kind -ceq "report.html"
+    })
     $failedThresholds = @(
-        foreach ($metricProperty in $summary.metrics.PSObject.Properties) {
-            $thresholdsProperty = $metricProperty.Value.PSObject.Properties["thresholds"]
-            if ($null -eq $thresholdsProperty -or $null -eq $thresholdsProperty.Value) {
-                continue
-            }
-            foreach ($thresholdProperty in $thresholdsProperty.Value.PSObject.Properties) {
-                $thresholdValue = $thresholdProperty.Value
-                $thresholdFailed = if ($thresholdValue -is [bool]) {
-                    # k6 v2 summary-export stores whether the threshold was crossed.
-                    [bool]$thresholdValue
+        if ($summaryArtifacts.Count -eq 1) {
+            $summary = Get-Content `
+                -Raw `
+                -LiteralPath $summaryArtifacts[0].path |
+                ConvertFrom-Json
+            foreach ($metricProperty in $summary.metrics.PSObject.Properties) {
+                $thresholdsProperty = (
+                    $metricProperty.Value.PSObject.Properties["thresholds"]
+                )
+                if (
+                    $null -eq $thresholdsProperty -or
+                    $null -eq $thresholdsProperty.Value
+                ) {
+                    continue
                 }
-                else {
-                    $okProperty = $thresholdValue.PSObject.Properties["ok"]
-                    if ($null -eq $okProperty) {
-                        throw (
-                            "Unsupported threshold result for " +
-                            "'$($metricProperty.Name): $($thresholdProperty.Name)'."
-                        )
+                foreach (
+                    $thresholdProperty in
+                    $thresholdsProperty.Value.PSObject.Properties
+                ) {
+                    $thresholdValue = $thresholdProperty.Value
+                    $thresholdFailed = if ($thresholdValue -is [bool]) {
+                        # k6 v2 summary-export stores whether the threshold was crossed.
+                        [bool]$thresholdValue
                     }
-                    -not [bool]$okProperty.Value
-                }
+                    else {
+                        $okProperty = $thresholdValue.PSObject.Properties["ok"]
+                        if ($null -eq $okProperty) {
+                            throw (
+                                "Unsupported threshold result for " +
+                                "'$($metricProperty.Name): " +
+                                "$($thresholdProperty.Name)'."
+                            )
+                        }
+                        -not [bool]$okProperty.Value
+                    }
 
-                if ($thresholdFailed) {
-                    "$($metricProperty.Name): $($thresholdProperty.Name)"
+                    if ($thresholdFailed) {
+                        "$($metricProperty.Name): $($thresholdProperty.Name)"
+                    }
                 }
             }
         }
     )
+    $missingArtifacts = @(
+        if ($summaryArtifacts.Count -eq 0) { "summary.json" }
+        if ($reportArtifacts.Count -eq 0) { "report.html" }
+    )
     $runnerSummaries += [pscustomobject]@{
-        runner = $artifact.runner
-        file = $artifact.name
+        runner = $runnerJobState.runner
+        job = $runnerJobState.job
+        jobComplete = [bool]$runnerJobState.complete
+        jobFailed = [bool]$runnerJobState.failed
+        diagnosticFailureAllowed = (
+            [bool]$runnerJobState.diagnosticFailureAllowed
+        )
+        file = if ($summaryArtifacts.Count -eq 1) {
+            $summaryArtifacts[0].name
+        }
+        else {
+            ""
+        }
+        reportFile = if ($reportArtifacts.Count -eq 1) {
+            $reportArtifacts[0].name
+        }
+        else {
+            ""
+        }
+        missingArtifacts = $missingArtifacts
         thresholdFailures = $failedThresholds
     }
 }
@@ -710,6 +785,12 @@ $collectionManifest = [ordered]@{
     complete = (
         $stage -eq "finished" -and
         $resourceEvidenceComplete -and
+        $runnerSummaries.Count -eq $parallelism -and
+        @($runnerSummaries | Where-Object {
+            -not $_.jobComplete -or
+            $_.jobFailed -or
+            $_.missingArtifacts.Count -gt 0
+        }).Count -eq 0 -and
         @($runnerSummaries | Where-Object {
             $_.thresholdFailures.Count -gt 0
         }).Count -eq 0
@@ -743,7 +824,14 @@ Write-Host (
 )
 Write-Host "Archive: $archiveDirectory"
 foreach ($runnerSummary in $runnerSummaries) {
-    if ($runnerSummary.thresholdFailures.Count -eq 0) {
+    if ($runnerSummary.missingArtifacts.Count -gt 0) {
+        Write-Warning (
+            "Runner $($runnerSummary.runner) Job failed=" +
+            "$($runnerSummary.jobFailed); missing artifacts: " +
+            ($runnerSummary.missingArtifacts -join ", ")
+        )
+    }
+    elseif ($runnerSummary.thresholdFailures.Count -eq 0) {
         Write-Host "Runner $($runnerSummary.runner): all exported thresholds passed"
     }
     else {

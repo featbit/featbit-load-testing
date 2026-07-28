@@ -1,0 +1,22 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim AS build
+
+WORKDIR /src
+COPY dotnet-sdk-runner/src/FeatBit.ServerSdk.LoadTest/FeatBit.ServerSdk.LoadTest.csproj \
+    dotnet-sdk-runner/src/FeatBit.ServerSdk.LoadTest/
+RUN dotnet restore \
+    dotnet-sdk-runner/src/FeatBit.ServerSdk.LoadTest/FeatBit.ServerSdk.LoadTest.csproj
+
+COPY dotnet-sdk-runner/src/FeatBit.ServerSdk.LoadTest \
+    dotnet-sdk-runner/src/FeatBit.ServerSdk.LoadTest
+RUN dotnet publish \
+    dotnet-sdk-runner/src/FeatBit.ServerSdk.LoadTest/FeatBit.ServerSdk.LoadTest.csproj \
+    --configuration Release \
+    --no-restore \
+    --output /app/publish
+
+FROM mcr.microsoft.com/dotnet/runtime:8.0-bookworm-slim
+
+WORKDIR /app
+COPY --from=build /app/publish .
+
+ENTRYPOINT ["dotnet", "FeatBit.ServerSdk.LoadTest.dll"]

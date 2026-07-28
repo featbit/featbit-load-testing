@@ -4,9 +4,11 @@ import test from "node:test";
 import {
   extractProbeSnapshot,
   findFeatureFlag,
+  indexFeatureFlags,
   parseExpectedRevisions,
   parseProbeFlagKeys,
   parseStreamingMessage,
+  utf8ByteLength,
 } from "../k6/lib/probe.js";
 import { createProbeFlag } from "./helpers/probe-fixtures.js";
 
@@ -44,7 +46,50 @@ test("parses FeatBit full and pong messages", () => {
 
   assert.equal(full.kind, "data-sync");
   assert.equal(full.eventType, "full");
-  assert.deepEqual(parseStreamingMessage('{"messageType":"pong","data":{}}'), { kind: "pong" });
+  assert.equal(full.rawBytes > 0, true);
+  assert.deepEqual(parseStreamingMessage('{"messageType":"pong","data":{}}'), {
+    kind: "pong",
+    rawBytes: 32,
+  });
+});
+
+test("extracts a JSON configuration revision without logging the configuration body", () => {
+  const flag = createProbeFlag({
+    variationType: "json",
+    variations: [
+      {
+        id: "active",
+        value: JSON.stringify({
+          _loadTestRevision: "rev-009",
+          settings: { timeoutMs: 2500 },
+          padding: "x".repeat(128),
+        }),
+      },
+      {
+        id: "inactive",
+        value: JSON.stringify({
+          _loadTestRevision: "baseline",
+          settings: { timeoutMs: 1000 },
+        }),
+      },
+    ],
+  });
+  const snapshot = extractProbeSnapshot(flag);
+
+  assert.equal(snapshot.revision, "rev-009");
+  assert.equal(snapshot.variationType, "json");
+  assert.equal(snapshot.variationValueBytes > 128, true);
+});
+
+test("indexes full-sync flags once and counts UTF-8 bytes exactly", () => {
+  const first = createProbeFlag({ key: "first" });
+  const second = createProbeFlag({ key: "second" });
+  const index = indexFeatureFlags([first, second]);
+
+  assert.equal(index.get("second"), second);
+  assert.equal(utf8ByteLength("ASCII"), 5);
+  assert.equal(utf8ByteLength("配置🙂"), 10);
+  assert.throws(() => indexFeatureFlags([first, first]), /duplicate key/);
 });
 
 test("extracts the deterministic evaluation value from the probe flag", () => {

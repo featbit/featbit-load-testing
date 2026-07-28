@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "matrixId": "aks-single-environment-3k-flags-dotnet-sdk-p500",
+  "experimentId": "sdk-flagset-3k-dotnet-p500-v1",
+  "resourceExperimentId": "sdk-flagset-3k-g5-v1",
+  "description": "Pilot using 500 official .NET Server SDK clients against one environment containing 3,000 feature flags, including 500 deterministic 2 KiB JSON configurations.",
+  "kubernetesContext": "aks-featbit-load-testing",
+  "projectKey": "load-testing",
+  "environmentKey": "sdk-flagset-3k-g5-v1-env",
+  "flagPrefix": "sdk-flagset-3k-g5-v1-flag-",
+  "flagCount": 3000,
+  "stringFlagCount": 2500,
+  "jsonFlagCount": 500,
+  "jsonVariationBytes": 2048,
+  "postRampWarmupFlagIndex": 9,
+  "revisionPlan": [
+    {
+      "index": 1,
+      "flagIndex": 1,
+      "variationType": "string",
+      "revision": "rev-001"
+    },
+    {
+      "index": 2,
+      "flagIndex": 2,
+      "variationType": "string",
+      "revision": "rev-002"
+    },
+    {
+      "index": 3,
+      "flagIndex": 3,
+      "variationType": "string",
+      "revision": "rev-003"
+    },
+    {
+      "index": 4,
+      "flagIndex": 4,
+      "variationType": "string",
+      "revision": "rev-004"
+    },
+    {
+      "index": 5,
+      "flagIndex": 5,
+      "variationType": "string",
+      "revision": "rev-005"
+    },
+    {
+      "index": 6,
+      "flagIndex": 6,
+      "variationType": "string",
+      "revision": "rev-006"
+    },
+    {
+      "index": 7,
+      "flagIndex": 7,
+      "variationType": "string",
+      "revision": "rev-007"
+    },
+    {
+      "index": 8,
+      "flagIndex": 8,
+      "variationType": "string",
+      "revision": "rev-008"
+    },
+    {
+      "index": 9,
+      "flagIndex": 2501,
+      "variationType": "json",
+      "revision": "rev-009"
+    },
+    {
+      "index": 10,
+      "flagIndex": 2502,
+      "variationType": "json",
+      "revision": "rev-010"
+    }
+  ],
+  "parallelism": 20,
+  "connectionsPerRunner": 25,
+  "connectionsPerEnvironmentPerRunner": 25,
+  "connectionsPerEnvironment": 500,
+  "totalConnections": 500,
+  "connectionsPerSecond": 20,
+  "rampDurationSeconds": 25,
+  "connectTimeoutMs": 15000,
+  "sdkStartWaitTimeMs": 300000,
+  "readyCoverageTimeoutSeconds": 600,
+  "runDurationSeconds": 1200,
+  "pollIntervalMs": 10,
+  "crossNodeClockToleranceMs": 10,
+  "resourceSampleIntervalMs": 1000,
+  "revisionIntervalSeconds": 30,
+  "warmupCoverageTimeoutSeconds": 120,
+  "finalSettleSeconds": 30,
+  "streamingUrl": "ws://featbit-els.featbit.svc.cluster.local:5100",
+  "configurationApiUrl": "http://featbit-api.featbit.svc.cluster.local:5000",
+  "fixedInfrastructure": {
+    "featbitNodes": 3,
+    "featbitNodeVmSize": "Standard_D4ds_v5",
+    "loadgenNodes": 10,
+    "loadgenNodeVmSize": "Standard_D4ds_v5",
+    "elsReplicas": 3,
+    "elsResources": {
+      "cpuRequest": "500m",
+      "cpuLimit": "1",
+      "memoryRequest": "256Mi",
+      "memoryLimit": "512Mi"
+    },
+    "runnerResources": {
+      "cpuRequest": "1",
+      "cpuLimit": null,
+      "memoryRequest": "2Gi",
+      "memoryLimit": "6Gi"
+    }
+  },
+  "kubernetesObjects": {
+    "configMap": "featbit-k6-flagset-3k-g5-v1-config",
+    "secret": "featbit-k6-flagset-3k-g5-v1-secret",
+    "controllerSecret": "featbit-k6-controller-secret",
+    "resultsPvc": "featbit-k6-results"
+  }
+}

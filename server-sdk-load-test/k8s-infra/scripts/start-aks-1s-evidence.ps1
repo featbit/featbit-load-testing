@@ -20,6 +20,16 @@ param(
     [ValidateRange(1, 100)]
     [int] $ExpectedLoadgenNodes = 10,
 
+    [ValidatePattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")]
+    [ValidateLength(1, 63)]
+    [string] $CollectorName = "featbit-1s-evidence",
+
+    [ValidatePattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")]
+    [string] $FeatBitWorkload = "featbit",
+
+    [ValidatePattern("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")]
+    [string] $LoadgenWorkload = "loadgen",
+
     [switch] $PreserveOnFailure
 )
 
@@ -62,10 +72,10 @@ Assert-KubernetesContext -KubeContext $targetContext
 
 & kubectl --context $targetContext `
     -n $script:LoadTestNamespace `
-    get daemonset featbit-1s-evidence -o name *> $null
+    get daemonset $CollectorName -o name *> $null
 if ($LASTEXITCODE -eq 0) {
     throw (
-        "DaemonSet featbit-1s-evidence already exists. " +
+        "DaemonSet $CollectorName already exists. " +
         "Stop its current run before starting '$RunId'."
     )
 }
@@ -82,10 +92,10 @@ $readyNodes = @($nodes.items | Where-Object {
     ($_.status.conditions | Where-Object type -eq "Ready").status -eq "True"
 })
 $featbitNodes = @($readyNodes | Where-Object {
-    $_.metadata.labels.workload -eq "featbit"
+    $_.metadata.labels.workload -eq $FeatBitWorkload
 })
 $loadgenNodes = @($readyNodes | Where-Object {
-    $_.metadata.labels.workload -eq "loadgen"
+    $_.metadata.labels.workload -eq $LoadgenWorkload
 })
 if ($featbitNodes.Count -ne $ExpectedFeatBitNodes) {
     throw (
@@ -160,7 +170,7 @@ if (-not (Test-Path -LiteralPath $collectorPath -PathType Leaf)) {
 $collectorScript = Get-Content -Raw -LiteralPath $collectorPath
 
 $commonLabels = [ordered]@{
-    "app.kubernetes.io/name" = "featbit-1s-evidence"
+    "app.kubernetes.io/name" = $CollectorName
     "app.kubernetes.io/part-of" = "featbit-load-testing"
     "loadtest.featbit.io/run-id" = $RunId
 }
@@ -168,7 +178,7 @@ $configMap = [ordered]@{
     apiVersion = "v1"
     kind = "ConfigMap"
     metadata = [ordered]@{
-        name = "featbit-1s-evidence"
+        name = $CollectorName
         namespace = $script:LoadTestNamespace
         labels = $commonLabels
     }
@@ -181,14 +191,14 @@ $daemonSet = [ordered]@{
     apiVersion = "apps/v1"
     kind = "DaemonSet"
     metadata = [ordered]@{
-        name = "featbit-1s-evidence"
+        name = $CollectorName
         namespace = $script:LoadTestNamespace
         labels = $commonLabels
     }
     spec = [ordered]@{
         selector = [ordered]@{
             matchLabels = [ordered]@{
-                "app.kubernetes.io/name" = "featbit-1s-evidence"
+                "app.kubernetes.io/name" = $CollectorName
             }
         }
         template = [ordered]@{
@@ -208,7 +218,10 @@ $daemonSet = [ordered]@{
                                         [ordered]@{
                                             key = "workload"
                                             operator = "In"
-                                            values = @("featbit", "loadgen")
+                                            values = @(
+                                                $FeatBitWorkload,
+                                                $LoadgenWorkload
+                                            )
                                         }
                                     )
                                 }
@@ -220,13 +233,13 @@ $daemonSet = [ordered]@{
                     [ordered]@{
                         key = "workload"
                         operator = "Equal"
-                        value = "featbit"
+                        value = $FeatBitWorkload
                         effect = "NoSchedule"
                     },
                     [ordered]@{
                         key = "workload"
                         operator = "Equal"
-                        value = "loadgen"
+                        value = $LoadgenWorkload
                         effect = "NoSchedule"
                     }
                 )
@@ -315,7 +328,7 @@ $daemonSet = [ordered]@{
                     [ordered]@{
                         name = "config"
                         configMap = [ordered]@{
-                            name = "featbit-1s-evidence"
+                            name = $CollectorName
                             defaultMode = 365
                         }
                     },
@@ -350,7 +363,7 @@ try {
 
     & kubectl --context $targetContext `
         -n $script:LoadTestNamespace `
-        rollout status daemonset/featbit-1s-evidence `
+        rollout status "daemonset/$CollectorName" `
         --timeout=5m
     if ($LASTEXITCODE -ne 0) {
         throw "The 1-second AKS evidence DaemonSet did not become ready."
@@ -360,7 +373,7 @@ try {
         -Arguments @(
             "--context", $targetContext,
             "-n", $script:LoadTestNamespace,
-            "get", "daemonset", "featbit-1s-evidence",
+            "get", "daemonset", $CollectorName,
             "-o", "json"
         ) `
         -FailureMessage "Failed to read the evidence DaemonSet status."
@@ -378,17 +391,27 @@ try {
 
     $mappingValidated = $false
     $mappedElsPods = -1
+    $mappingFiles = @(
+        $featbitNodes |
+            ForEach-Object {
+                $nodeToken = (
+                    [string]$_.metadata.name
+                ) -replace "[^A-Za-z0-9._-]", "_"
+                "/results/$RunId-node-$nodeToken-metadata.txt"
+            }
+    )
+    $mappingCommand = (
+        "grep -h '^els_pod_count=' " +
+        ($mappingFiles -join " ") +
+        " 2>/dev/null || true"
+    )
     for ($attempt = 1; $attempt -le 30; $attempt += 1) {
         $mappingOutput = (
             & kubectl --request-timeout=30s `
                 --context $targetContext `
                 -n $script:LoadTestNamespace `
                 exec results-reader -- `
-                sh -c (
-                    "grep -h '^els_pod_count=' " +
-                    "/results/$RunId-node-aks-featbit-*-metadata.txt " +
-                    "2>/dev/null || true"
-                ) |
+                sh -c $mappingCommand |
                 Out-String
         )
         if ($LASTEXITCODE -ne 0) {
@@ -423,9 +446,12 @@ try {
     $cleanupRequired = $false
     [pscustomobject]@{
         RunId = $RunId
+        CollectorName = $CollectorName
         CollectorPods = [int]$status.status.numberReady
         FeatBitNodes = $featbitNodes.Count
+        FeatBitWorkload = $FeatBitWorkload
         LoadgenNodes = $loadgenNodes.Count
+        LoadgenWorkload = $LoadgenWorkload
         ElsPods = $readyElsPods.Count
         ElsNodes = $elsNodes.Count
         MappedElsPods = $mappedElsPods
@@ -436,12 +462,12 @@ finally {
     if ($cleanupRequired -and -not $PreserveOnFailure) {
         & kubectl --context $targetContext `
             -n $script:LoadTestNamespace `
-            delete daemonset featbit-1s-evidence `
+            delete daemonset $CollectorName `
             --ignore-not-found=true `
             --wait=false *> $null
         & kubectl --context $targetContext `
             -n $script:LoadTestNamespace `
-            delete configmap featbit-1s-evidence `
+            delete configmap $CollectorName `
             --ignore-not-found=true *> $null
     }
 }

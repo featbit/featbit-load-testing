@@ -1,4 +1,12 @@
-export function createProbeState(key, index, expectedRevisionCount) {
+export function createProbeState(
+  key,
+  index,
+  expectedRevisionCount,
+  expectedRevisionIndexes = Array.from(
+    { length: expectedRevisionCount },
+    (_, revisionIndex) => revisionIndex,
+  ),
+) {
   return {
     key,
     index,
@@ -6,6 +14,8 @@ export function createProbeState(key, index, expectedRevisionCount) {
     appliedRevision: null,
     appliedUpdatedAtMs: null,
     lastExpectedRevisionIndex: -1,
+    lastExpectedSequencePosition: -1,
+    expectedRevisionIndexes: [...expectedRevisionIndexes],
     seenRevisions: Array(expectedRevisionCount).fill(false),
   };
 }
@@ -39,20 +49,31 @@ export function applyProbeSnapshot(probeState, snapshot, expectedRevisionIndex) 
   let firstSeen = false;
   let sequenceError = false;
 
-  if (revisionIndex === undefined) {
+  const expectedSequencePosition =
+    revisionIndex === undefined
+      ? -1
+      : probeState.expectedRevisionIndexes.indexOf(revisionIndex);
+
+  if (revisionIndex === undefined || expectedSequencePosition === -1) {
     kind = "unexpected";
   } else if (probeState.seenRevisions[revisionIndex]) {
     kind = "repeated";
     // Re-saving the current value is harmless, but applying an older value
     // after a newer expected revision is a real sequence regression.
-    sequenceError = revisionIndex < probeState.lastExpectedRevisionIndex;
+    sequenceError =
+      expectedSequencePosition < probeState.lastExpectedSequencePosition;
   } else {
     firstSeen = true;
-    sequenceError = revisionIndex !== probeState.lastExpectedRevisionIndex + 1;
+    sequenceError =
+      expectedSequencePosition !== probeState.lastExpectedSequencePosition + 1;
     probeState.seenRevisions[revisionIndex] = true;
     probeState.lastExpectedRevisionIndex = Math.max(
       probeState.lastExpectedRevisionIndex,
       revisionIndex,
+    );
+    probeState.lastExpectedSequencePosition = Math.max(
+      probeState.lastExpectedSequencePosition,
+      expectedSequencePosition,
     );
   }
 

@@ -9,21 +9,29 @@ handling, and final revision consistency.
 Run suite-specific commands from the `server-sdk-load-test/` directory. Paths
 in the AKS and Docker Desktop runbooks are relative to that directory.
 
-[Verified result](#verified-10000-connection-result) ·
-[>100 ms jitter is attributed to k6](#jitter-and-tail-latency-above-100-ms-are-attributed-to-the-k6-measurement-path-not-featbit-els) ·
+[Verified results](#verified-test-results) ·
+[10,000-connection bottleneck interpretation](#bottleneck-interpretation-for-the-verified-10000-connection-results) ·
 [Historical records](#historical-experiment-record) ·
 [Five-group reference](#1-five-group-reference-matrix) ·
 [Multi-environment baseline](#6-multi-environment-g5-baseline) ·
+[3,000-flag capacity validation](#7-single-environment-3000-flag-capacity-validation) ·
+[500-client official .NET pilot](#3000-flag-net-sdk-pilot-500-connections) ·
 [Latest three-stage summary](docs/reports/aks-10k-three-stage-g5-d4.html) ·
 [Latest k6 report](docs/reports/aks-10k-three-stage-g5-d4-runner-17.html) ·
 [AKS runbook](k8s-infra/README-AKS.md)
 
-## Verified 10,000-connection result
+## Verified test results
 
-All experiments below used 10,000 Server SDK WebSockets, a 100 connections/s
-ramp, one unmeasured post-ramp warm-up flag, one measured flag, 10 revisions
-at 30-second intervals, and the internal Kubernetes streaming Service. No
-FeatBit source code or image was changed.
+The first two verified scenarios in this section use 10,000 Server SDK
+WebSockets, a 100 connections/s ramp, one unmeasured post-ramp warm-up flag,
+one measured flag, 10 revisions at 30-second intervals, and the internal
+Kubernetes streaming Service.
+
+The third verified scenario is the later 500-connection / 3,000-flag official
+.NET SDK pilot. It is placed here so the newest result is visible beside the
+10,000-connection results, but its different connection count, flag inventory,
+client implementation, and ELS resource profile remain explicit. No FeatBit
+source code or image was changed in any of these scenarios.
 
 ### Typical multi-environment scenario
 
@@ -73,7 +81,44 @@ distribution. The Three-stage runs did not retain a fixed-cutoff submetric at
 the canonical Redis-observer boundary, so inventing post-hoc filtered values
 would be misleading.
 
-### Connection ramp health
+### 3,000-flag .NET SDK pilot (500 connections)
+
+Large-inventory official-SDK scenario: one Environment contains 2,500 string
+flags and 500 JSON configuration flags with 2,048-byte values. Twenty Pods
+run 25 real `FbClient` instances each; the global ramp is 20 connections/s.
+The formal phase changes eight string flags and two JSON flags.
+
+This is a verified **500-connection** result. It did not test 10,000
+connections and cannot be used as evidence for the 10,000-connection
+capacity, ramp-health, scaling, or bottleneck conclusions below.
+
+| Result | Client topology | ELS Pods: count; CPU; memory | Runner Pods: count; CPU; memory | Ramp and initialization | Revision delivery |
+| --- | --- | --- | --- | --- | --- |
+| **Validation passed** | **500 official .NET SDK clients; 20/s** | **3 × (1→3 CPU; 2→8Gi)** | **20 × (1 CPU request, no limit; 2→6Gi)** | **498/500 ready at 25s; 500/500 by 25.057s; initialization avg/p95/p99/max 181.57/314.05/472.09/514 ms** | **Warm-up 1,000/1,000; formal 5,000/5,000; 0 sequence/health errors** |
+
+| Metric (ms) | count | avg | p50 | p90 | p95 | p99 | max |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| PUT start → SDK | 5,000 | 28.22 | 24 | 32 | 34 | 186 | 310 |
+| PUT start → Redis | 10 | 19.00 | 18 | 20.60 | 23.30 | 25.46 | 26 |
+| Redis → SDK | 5,000 | 9.22 | 6 | 12 | 15 | 168 | 292 |
+
+The complete distribution is primary. The auxiliary
+`Redis → SDK <= 100 ms` diagnostic retained 4,911/5,000 samples and reported
+avg/p95/p99/max 6.34/13/35/97 ms. Exact per-revision values, one-second node
+evidence, resource peaks, image digests, and limitations are retained in
+[section 8](#8-official-net-sdk-500-client--3000-flag-pilot) and the
+[complete report](docs/reports/aks-500-single-env-3k-flags-dotnet-sdk-pilot.md).
+
+## Bottleneck interpretation for the verified 10,000-connection results
+
+This chapter applies only to the two 10,000-connection k6 scenarios above:
+the typical multi-environment workload and the full revision fan-out
+workload. It does **not** include the 3,000-flag official .NET SDK pilot,
+which ran 500 connections. The pilot therefore does not participate in the
+following ramp-health count, scaling comparison, k6 tail attribution, or
+10,000-connection capacity conclusion.
+
+### 10,000-connection ramp health
 
 All 11 represented runs completed the `0 → 10,000` WebSocket ramp in 100 seconds
 (~100/s). Every run opened, synchronized, warmed, and retained all 10,000
@@ -769,6 +814,102 @@ Artifacts:
 [machine-readable result and embedded evidence](docs/reports/aks-10k-multi-environment-g5-d4-els3.json),
 and [exact matrix](k8s-infra/matrices/aks-multi-environment-g5-d4-els3.json).
 
+### 7. Single-environment 3,000-flag capacity validation
+
+**Historical status:** 10,000-client capacity validation failed; its isolated
+10,000-client rerun remains blocked by Azure vCPU quota. The separate
+500-client official-SDK pilot is recorded in section 8.
+
+This independent extreme workload keeps 10,000 connections in one Environment
+and provisions 3,000 flags: 2,500 string flags and 500 JSON configuration
+flags with 2,048-byte variations. The planned formal phase changes eight
+string flags and two JSON flags. It is intentionally separate from both the
+100-Environment baseline and the earlier 20-flag full-fan-out runs.
+
+The expanded validation run
+`growth-f3k-v-20260727161112-18e5` reached only 167/10,000 exact full-sync
+records before all 20 runner Jobs failed. Five runners were explicitly
+`OOMKilled`; runner memory reached the 6 GiB limit, loadgen nodes reached
+approximately 4 CPU, ELS reached 2.40–2.81 CPU and 6.40–6.42 GiB per Pod, and
+Kubernetes recorded ELS liveness/readiness failures. No formal revision was
+applied, all 10 measured flags were restored, and the run remains `FAIL`.
+
+The 167 partial records had 5,048,186–5,635,811-byte payloads. Their
+full-sync schedule drift was p50 355,247 ms, p95 399,145 ms, p99 406,376 ms,
+and max 406,509 ms. Those values describe only 1.67% of the required
+connections and are diagnostic; they are not a 10,000-connection percentile.
+
+The isolated rerun leaves the historical 3-node FeatBit and 10-node loadgen
+pools unchanged. It adds 10 D4 loadgen nodes so the 20 runners are one per
+node, plus three dedicated D4 ELS nodes. This needs 52 additional vCPUs, but
+East Asia currently has 54/65 total and Standard DDSv5 vCPUs in use. Both
+quotas must be raised to at least 106; 120 is the requested operational
+headroom.
+
+See the
+[capacity-validation report](docs/reports/aks-10k-single-env-3k-flags-capacity-validation.md),
+[machine-readable record](docs/reports/aks-10k-single-env-3k-flags-capacity-validation.json),
+[isolated matrix](k8s-infra/matrices/aks-single-environment-3k-flags-g5-d4-isolated.json),
+and [AKS runbook](k8s-infra/README-AKS.md#117-single-environment--3000-flag-extreme-test).
+
+### 8. Official .NET SDK 500-client / 3,000-flag pilot
+
+**Historical status:** completed validation; PASS.
+
+The historical suite remains the k6 implementation described above: every k6
+VU opens one WebSocket and follows the .NET Server SDK streaming and
+version-application behavior, while exposing the protocol and timing events
+needed by the load-test analyzers. Those tests do not start .NET processes.
+
+This later, independent pilot answers a narrower question raised by the
+3,000-flag experiment: how 500 real SDK clients behave when the initial
+full-sync is parsed and applied by the public `FeatBit.ServerSdk` package
+instead of the k6 implementation. It uses 20 Pods × 25 clients from
+`FeatBit.ServerSdk` 1.2.11, a global 20/s ramp, and the same one-Environment
+data set containing 2,500 string flags and 500 2,048-byte JSON flags.
+
+This is a lower-scale official-SDK baseline, not a successful rerun of the
+10,000-client capacity test and not a redefinition of the historical suite.
+
+| Ramp and health | Result |
+| --- | ---: |
+| Ready at the 25-second ramp boundary | 498/500 |
+| Final ready delay beyond ramp | **57 ms** |
+| SDK initialization avg / p95 / p99 / max | 181.57 / 314.05 / 472.09 / 514 ms |
+| Warm-up | 1,000/1,000 deliveries = 500 clients × two patches |
+| Formal revisions | 5,000/5,000 deliveries = 500 clients × ten revisions |
+| Sequence / health errors | 0 / 0 |
+
+The formal plan changed eight string flags and two JSON flags, 30 seconds
+apart.
+
+| Metric (ms) | count | avg | p50 | p90 | p95 | p99 | max |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| PUT start → SDK | 5,000 | 28.22 | 24 | 32 | 34 | 186 | 310 |
+| PUT start → Redis | 10 | 19.00 | 18 | 20.60 | 23.30 | 25.46 | 26 |
+| Redis → SDK | 5,000 | 9.22 | 6 | 12 | 15 | 168 | 292 |
+
+The auxiliary `Redis → SDK <= 100 ms` diagnostic retained 4,911/5,000
+samples. Its avg/p95/p99/max was 6.34/13/35/97 ms. The complete distribution
+above remains primary.
+
+The successful resource profile kept three ELS Pods but changed each Pod to
+1→3 CPU and 2→8Gi memory. Five-second aggregate peaks were 467m/1.313GiB for
+ELS and 3.509 CPU/8.03GiB for the 20 runner containers. Exact ELS cgroup
+evidence recorded 0/11,359 throttled periods, 0 restarts, and no OOM or
+`DataSyncMessageHandler` error in the run window.
+
+During initial sync, the FeatBit nodes sent 4.628GiB and reached a
+1.067Gbit/s one-second per-node peak. Packet drops were zero. All clients
+still initialized only 57 ms beyond the ramp boundary, so this run does not
+support a bandwidth bottleneck at 500 clients.
+
+See the
+[complete report](docs/reports/aks-500-single-env-3k-flags-dotnet-sdk-pilot.md),
+[machine-readable result](docs/reports/aks-500-single-env-3k-flags-dotnet-sdk-pilot.json),
+[official .NET runner](dotnet-sdk-runner/README.md), and
+[exact matrix](k8s-infra/matrices/aks-single-environment-3k-flags-dotnet-sdk-p500-els-expanded.json).
+
 ## Test profiles
 
 `Ramp rate` means new WebSocket connections per second.
@@ -779,6 +920,8 @@ and [exact matrix](k8s-infra/matrices/aks-multi-environment-g5-d4-els3.json).
 | Baseline | Remote load generator | 10/s | 1,000 | 10 | 1 |
 | Baseline Plus | Remote load generator | 30/s | 3,000 | 10 | 1 |
 | Growth | AKS only | 100/s | 10,000 | 20 | 1 |
+| Extreme large flag-set | AKS only | 100/s | 10,000 | 3,000 | 10 |
+| Large flag-set .NET SDK pilot | AKS only | 20/s | 500 | 3,000 | 10 |
 | Growth Plus | AKS only | 200/s | 20,000 | 20 | 1 |
 
 The single-environment 10,000-connection investigations retain a 100/s ramp,
@@ -786,7 +929,10 @@ The single-environment 10,000-connection investigations retain a 100/s ramp,
 flag-01 as the only changed and measured flag, and 10 formal revisions per
 run. The multi-environment baseline in section 6 provisions 20 flags in each
 of 100 Environments but changes only the target Environment's flag-01 and
-flag-02.
+flag-02. The extreme profile in section 7 uses one Environment and changes
+eight string flags plus two JSON flags; its failed validation is not a
+capacity baseline. The official .NET pilot in section 8 uses the same ten
+flags at 500 clients and is also not a 10,000-client capacity baseline.
 
 [Back to top](#featbit-server-sdk-websocket-load-testing)
 
@@ -801,6 +947,8 @@ These experiments establish a verified lower bound, not the maximum:
   329 ms.
 - Connection counts above 10,000 require a separate controlled capacity
   ladder before claiming a higher limit.
+- The successful 500-client / 3,000-flag official-SDK pilot validates its own
+  lower-scale profile; it does not raise the verified 10,000-client boundary.
 
 ## Published k6 report
 
@@ -847,6 +995,9 @@ README:
 | [`k8s-infra/scripts/summarize-aks-capacity-matrix.ps1`](k8s-infra/scripts/summarize-aks-capacity-matrix.ps1) | Recreates five-group latency, comparison, and resource tables |
 | [`k8s-infra/scripts/analyze-aks-stage-latency.ps1`](k8s-infra/scripts/analyze-aks-stage-latency.ps1) | Recreates all three latency stages for one collected run |
 | [`k8s-infra/scripts/analyze-aks-latency.ps1`](k8s-infra/scripts/analyze-aks-latency.ps1) | Recreates complete and `>100 ms` de-jittered views for one run |
+| [`dotnet-sdk-runner/README.md`](dotnet-sdk-runner/README.md) | Official .NET SDK runner contract, measurement boundaries, build, render, run, and analysis |
+| [`k8s-infra/scripts/run-aks-dotnet-sdk-pilot.ps1`](k8s-infra/scripts/run-aks-dotnet-sdk-pilot.ps1) | Runs the retained 500-client / 3,000-flag official-SDK pilot |
+| [`k8s-infra/scripts/analyze-aks-dotnet-node-evidence.ps1`](k8s-infra/scripts/analyze-aks-dotnet-node-evidence.ps1) | Recreates one-second CPU, pressure, run-queue, softirq, traffic, drop, and retransmission evidence |
 | [`k8s-infra/terraform/aks/README.md`](k8s-infra/terraform/aks/README.md) | Ephemeral AKS, ACR, and node-pool provisioning |
 | [`k8s-infra/README.md`](k8s-infra/README.md) | Docker Desktop rehearsal and local result collection |
 | [`.github/workflows/publish-server-sdk-k6-report.yml`](../.github/workflows/publish-server-sdk-k6-report.yml) | Publishes the retained Server SDK HTML artifact to GitHub Pages |

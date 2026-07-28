@@ -6,6 +6,9 @@
 迁移到 Azure Kubernetes Service（AKS）。目标是让 FeatBit、k6 Operator 和实际负载都在
 Azure 中运行，并通过资源隔离和监控判断传播延迟来自负载生成器还是 FeatBit 服务端。
 
+第 11.8 节后来增加了一个独立的官方 .NET SDK pilot；它不改变此前各节所记录的
+k6 AKS 测试流程和历史结果。
+
 所有相对路径命令均从仓库中的 `server-sdk-load-test/` 目录执行。
 
 - 测试行为、Profile 和通过条件见[根 README](../README.md)。
@@ -25,6 +28,7 @@ Azure 中运行，并通过资源隔离和监控判断传播延迟来自负载�
 - [6. 配置 access token、Server SDK secret 与 controller](#6-配置测试凭据与-controller)
 - [7–8. 构建 runner 镜像并配置 TestRun](#7-构建并固定-runner-镜像)
 - [9–11. 完成 Gate 并执行测试](#9-仓库适配清单)
+- [11.8 官方 .NET SDK 500-client pilot](#118-official-net-sdk-500-client-pilot)
 - [传播延迟归因](#12-如何判断传播延迟瓶颈)
 - [故障处理与官方参考](#常见问题)
 
@@ -93,10 +97,11 @@ generator 调度压力污染。完整正常/去波峰结果和 1 秒资源证据
 | `bootstrap-aks.ps1`、target/controller/flag 配置脚本 | AKS 可用 | 必须显式传入目标 `-KubeContext` |
 | `bootstrap.ps1`、`run-test.ps1`、`collect-results.ps1` | 当前仅本地 | 保留 Docker Desktop 保护；growth/growth-plus 会拒绝本地单 runner |
 | `render-aks-testrun.ps1`、`monitor-aks-testrun.ps1`、`collect-results-aks.ps1` | AKS 可用 | 渲染、资源峰值采样和完整证据归档 |
+| `dotnet-sdk-runner/`、`job-aks-dotnet-sdk-large-flagset-pilot.yaml` 与 `run-aks-dotnet-sdk-pilot.ps1` | AKS 独立官方 SDK 路径 | 运行真实 `FbClient`；不替换或改写既有 k6 实验 |
 | `k8s-infra/terraform/aks/` | 可用 | 创建/销毁临时 AKS、ACR 与 system/featbit/loadgen 节点池 |
 
 本地电脑或 Azure Cloud Shell 可以继续充当轻量控制端，执行 `az`、`helm` 和 `kubectl`；
-k6 的连接与测量负载必须在 AKS runner Pod 内产生。
+k6 或官方 .NET SDK 的连接与测量负载必须在 AKS runner Pod 内产生。
 
 ## 推荐拓扑
 
@@ -1419,6 +1424,167 @@ environment/runner 5 条连接后，执行完整批次：
 Job、Secret、ConfigMap、PVC 或 AKS 资源。最终报告由
 `summarize-aks-multi-environment-runs.ps1` 生成；正式基线报告见
 `docs/reports/aks-10k-multi-environment-g5-d4-els3.md` 和同名 JSON。
+
+### 11.7 Single Environment / 3,000-flag extreme test
+
+这是一个独立的极限实验，不复用多环境 runner 入口，也不覆盖旧矩阵。固定工作负载为：
+
+- 一个 Project / 一个 Environment；
+- 2,500 个 string flags + 500 个 JSON config flags；
+- 每个 JSON variation 精确 2,048 bytes；
+- 20 runners × 500 connections；
+- 100 connections/s，100 秒完成连接调度；
+- 8 个 string flags 和 2 个 JSON flags 各更新一次，间隔 30 秒。
+
+相关入口：
+
+| 作用 | 文件 |
+| --- | --- |
+| 原 G5 资源验证 | `matrices/aks-single-environment-3k-flags-g5-d4-els3.json` |
+| 第一次 ELS 扩容诊断 | `matrices/aks-single-environment-3k-flags-g5-d4-els3-expanded.json` |
+| 独立节点安全档 | `matrices/aks-single-environment-3k-flags-g5-d4-isolated.json` |
+| 原 10-node TestRun | `templates/testrun-aks-large-flagset.yaml` |
+| 独立 20-node TestRun | `templates/testrun-aks-large-flagset-isolated.yaml` |
+| 幂等资源准备 | `scripts/prepare-large-flagset-resources.ps1` |
+| 执行与 gate | `scripts/run-aks-large-flagset-experiment.ps1` |
+| 分析 | `scripts/analyze-aks-large-flagset.ps1` |
+
+当前 East Asia 总区域和 Standard DDSv5 配额均为 65 vCPU，已使用 54。
+独立矩阵需要新增 `loadgen3k` 10 × D4 和 `els3k` 3 × D4，共 52 vCPU；
+因此两个配额都必须至少提高到 106，建议 120。在配额不足时
+`ensure-aks-large-flagset-node-pools.ps1` 会在创建任何节点池前明确报错。
+它不会缩容、替换或删除现有 `featbit`/`loadgen` 节点池。
+
+配额获批后，按以下顺序执行：
+
+```powershell
+$context = "aks-featbit-load-testing"
+$matrix = ".\k8s-infra\matrices\aks-single-environment-3k-flags-g5-d4-isolated.json"
+$runnerImage = "<registry>/<repository>@sha256:<digest>"
+
+.\k8s-infra\scripts\ensure-aks-large-flagset-node-pools.ps1 `
+  -KubeContext $context `
+  -MatrixPath $matrix
+
+.\k8s-infra\scripts\apply-aks-large-flagset-els-profile.ps1 `
+  -KubeContext $context `
+  -MatrixPath $matrix
+
+.\k8s-infra\scripts\ensure-aks-large-flagset-1s-evidence.ps1 `
+  -KubeContext $context `
+  -MatrixPath $matrix
+
+.\k8s-infra\scripts\render-aks-large-flagset-testrun.ps1 `
+  -RunKind validation `
+  -KubeContext $context `
+  -RunnerImage $runnerImage `
+  -MatrixPath $matrix `
+  -TopologyOnly
+
+.\k8s-infra\scripts\run-aks-large-flagset-experiment.ps1 `
+  -RunKind validation `
+  -KubeContext $context `
+  -RunnerImage $runnerImage `
+  -MatrixPath $matrix
+```
+
+正式 revision 只有在 10,000/10,000 exact full sync 和 ready gate 后才会开始。
+报告同时给出 connection attempt、WebSocket open 和 3,000-flag ready 相对
+100 秒 ramp 终点的实际延迟。失败轮允许缺少 k6 summary，但必须保留 runner
+日志、缺失清单、Pod/Job snapshot 和资源证据，并保持 `complete=false`。
+
+实验结束后，为保持旧实验可直接复现，只恢复 ELS baseline；不要删除或缩容新增
+节点池：
+
+```powershell
+.\k8s-infra\scripts\apply-aks-large-flagset-els-profile.ps1 `
+  -KubeContext aks-featbit-load-testing `
+  -MatrixPath .\k8s-infra\matrices\aks-single-environment-3k-flags-g5-d4-els3.json
+```
+
+当前失败容量验证与配额状态见
+`docs/reports/aks-10k-single-env-3k-flags-capacity-validation.md`。它没有执行正式
+revision，不能作为传播延迟基线。
+
+### 11.8 Official .NET SDK 500-client pilot
+
+这是一个独立的官方 SDK 验证入口；现有 k6 脚本、TestRun 和矩阵保持可运行。
+它复用 11.7 已幂等创建的一个 Environment / 3,000 flags 数据集，但将连接负载改为
+20 个 runner Pods × 25 个真实 `FbClient`，全局 20 clients/s，25 秒调度 500
+clients。正式阶段仍为 8 个 string 与 2 个 JSON revision，间隔 30 秒。
+
+固定资源档为：
+
+| 资源 | 配置 |
+| --- | --- |
+| FeatBit / loadgen nodes | 3 × D4 / 10 × D4；不新增、缩容或删除节点池 |
+| ELS | 3 Pods；每 Pod request 1 CPU / 2Gi，limit 3 CPU / 8Gi |
+| .NET runner | 20 Pods；每 Pod request 1 CPU / 2Gi，无 CPU limit，memory limit 6Gi |
+| SDK | `FeatBit.ServerSdk` 1.2.11 |
+
+资源准备必须使用原 3k resource matrix，因为它拥有 Environment 名称、描述、flag
+定义和 Kubernetes Secret/ConfigMap；pilot matrix 只定义新的 SDK client 拓扑，并以
+`resourceExperimentId` 显式复用这些资源。access token 和 Server SDK secret 只从
+既有 Kubernetes Secret 读取，不写入 Git、ConfigMap、日志或报告。
+
+```powershell
+$context = "aks-featbit-load-testing"
+$resourceMatrix = ".\k8s-infra\matrices\aks-single-environment-3k-flags-g5-d4-els3-expanded.json"
+$pilotMatrix = ".\k8s-infra\matrices\aks-single-environment-3k-flags-dotnet-sdk-p500-els-expanded.json"
+
+kubectl --context $context `
+  -n featbit port-forward service/featbit-api 15000:5000
+
+.\k8s-infra\scripts\prepare-large-flagset-resources.ps1 `
+  -KubeContext $context `
+  -ApiUrl http://127.0.0.1:15000 `
+  -MatrixPath $resourceMatrix
+
+.\k8s-infra\scripts\apply-aks-large-flagset-els-profile.ps1 `
+  -KubeContext $context `
+  -MatrixPath $pilotMatrix
+```
+
+先 render 并执行 server-side dry-run；确认 20 × 25 = 500、20/s 和 25 秒 ramp 后，
+再运行验证轮：
+
+```powershell
+$runnerImage = "featbitloadtesting22793c56acr.azurecr.io/featbit-dotnet-sdk-loadtest@sha256:ee15206675396b2516d5e6b2f7c0a657a1a202ba526331263fb82ecfa07db817"
+$controllerImage = "featbitloadtesting22793c56acr.azurecr.io/featbit-k6@sha256:1d4cdc7665ebaf3ec267aa7f938da0a5c768bdab9d00b3d8733e24c6e4fd9580"
+
+.\k8s-infra\scripts\render-aks-dotnet-sdk-pilot.ps1 `
+  -RunKind validation `
+  -KubeContext $context `
+  -RunnerImage $runnerImage `
+  -ControllerImage $controllerImage `
+  -MatrixPath $pilotMatrix
+
+.\k8s-infra\scripts\run-aks-dotnet-sdk-pilot.ps1 `
+  -RunKind validation `
+  -KubeContext $context `
+  -RunnerImage $runnerImage `
+  -ControllerImage $controllerImage `
+  -MatrixPath $pilotMatrix
+```
+
+executor 会保留 Job、controller、每个 runner 的原始事件、失败轮、1 秒节点证据、
+精确 ELS cgroup 快照和限定运行时间窗的 ELS 日志。它只恢复 11 个被测试修改的
+flags，不删除 AKS、节点池、PVC、环境、flags 或历史结果。分析器也可独立重放：
+
+```powershell
+.\k8s-infra\scripts\analyze-aks-dotnet-sdk-pilot.ps1 `
+  -RunDirectory .\results\<run-id>
+
+.\k8s-infra\scripts\analyze-aks-dotnet-node-evidence.ps1 `
+  -RunDirectory .\results\<run-id>
+```
+
+验证轮 `growth-f3k-dotnet-p500-v-20260728130543-8b66` 已通过：500/500
+initialized，25 秒 ramp 后仅延迟 57 ms，warm-up 1,000/1,000，正式 revision
+5,000/5,000，错误为 0。完整结果、每 revision 三阶段延迟、完整/辅助去抖动视图和
+资源证据见
+[`aks-500-single-env-3k-flags-dotnet-sdk-pilot.md`](../docs/reports/aks-500-single-env-3k-flags-dotnet-sdk-pilot.md)。
+这是 500-client 新基线，不能改写为 10,000-client 成功结果。
 
 ## 12. 如何判断传播延迟瓶颈
 

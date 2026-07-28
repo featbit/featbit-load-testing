@@ -1,0 +1,142 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: __JOB_NAME__
+  namespace: featbit-loadtest
+  labels:
+    app.kubernetes.io/name: featbit-dotnet-sdk-runner
+    app.kubernetes.io/part-of: featbit-load-testing
+    loadtest.featbit.io/run-id: __RUN_ID__
+    loadtest.featbit.io/profile: extreme-large-flagset-dotnet-p500
+    loadtest.featbit.io/experiment: sdk-flagset-3k-dotnet-p500-v1
+    loadtest.featbit.io/run-kind: __RUN_KIND__
+spec:
+  completions: 20
+  parallelism: 20
+  completionMode: Indexed
+  # Preserve a terminal summary from every index if the run fails. The
+  # orchestration gate still rejects any failed index.
+  backoffLimitPerIndex: 0
+  suspend: false
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: featbit-dotnet-sdk-runner
+        app.kubernetes.io/part-of: featbit-load-testing
+        loadtest.featbit.io/run-id: __RUN_ID__
+        loadtest.featbit.io/profile: extreme-large-flagset-dotnet-p500
+        loadtest.featbit.io/experiment: sdk-flagset-3k-dotnet-p500-v1
+        loadtest.featbit.io/run-kind: __RUN_KIND__
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        workload: loadgen
+      tolerations:
+        - key: workload
+          operator: Equal
+          value: loadgen
+          effect: NoSchedule
+      topologySpreadConstraints:
+        - maxSkew: 1
+          minDomains: 10
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          nodeAffinityPolicy: Honor
+          nodeTaintsPolicy: Honor
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: featbit-dotnet-sdk-runner
+              loadtest.featbit.io/run-id: __RUN_ID__
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 12345
+        runAsGroup: 12345
+        fsGroup: 12345
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: runner
+          image: __RUNNER_IMAGE__
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              memory: 6Gi
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - test -f /tmp/featbit-dotnet-runner-ready
+            initialDelaySeconds: 1
+            periodSeconds: 1
+            timeoutSeconds: 1
+            failureThreshold: 300
+          envFrom:
+            - configMapRef:
+                name: featbit-k6-flagset-3k-g5-v1-config
+          env:
+            - name: RUN_ID
+              value: __RUN_ID__
+            - name: RUNNER_INDEX
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+            - name: LOADTEST_PARALLELISM
+              value: "20"
+            - name: CLIENTS_PER_RUNNER
+              value: "25"
+            - name: TOTAL_CONNECTIONS
+              value: "500"
+            - name: CONNECTIONS_PER_SECOND
+              value: "20"
+            - name: START_AT_UNIX_MS
+              value: "__START_AT_UNIX_MS__"
+            - name: FEATBIT_STREAMING_URL
+              value: ws://featbit-els.featbit.svc.cluster.local:5100
+            - name: FEATBIT_API_URL
+              value: http://featbit-api.featbit.svc.cluster.local:5000
+            - name: MULTI_ENVIRONMENT_SECRET_PATH
+              value: /var/run/featbit-loadtest/environments.json
+            - name: EXPECTED_FULL_SYNC_FLAG_COUNT
+              value: "3000"
+            - name: CONNECT_TIMEOUT_MS
+              value: "15000"
+            - name: START_WAIT_TIME_MS
+              value: "300000"
+            - name: READY_TIMEOUT_SECONDS
+              value: "600"
+            - name: RUN_DURATION_SECONDS
+              value: "1200"
+            - name: POLL_INTERVAL_MS
+              value: "10"
+            - name: RESOURCE_SAMPLE_INTERVAL_MS
+              value: "1000"
+            - name: RESULTS_DIRECTORY
+              value: /results/__RUN_ID__
+            - name: STOP_FILE
+              value: /tmp/featbit-stop
+          volumeMounts:
+            - name: results
+              mountPath: /results
+            - name: environment-secret
+              mountPath: /var/run/featbit-loadtest
+              readOnly: true
+      volumes:
+        - name: results
+          persistentVolumeClaim:
+            claimName: featbit-k6-results
+        - name: environment-secret
+          secret:
+            secretName: featbit-k6-flagset-3k-g5-v1-secret
+            items:
+              - key: environments.json
+                path: environments.json

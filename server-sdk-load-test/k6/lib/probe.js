@@ -21,6 +21,7 @@ export function parseProbeFlagKeys(rawValue) {
 }
 
 export function parseStreamingMessage(rawMessage) {
+  const rawBytes = utf8ByteLength(rawMessage);
   let message;
   try {
     message = JSON.parse(rawMessage);
@@ -33,11 +34,11 @@ export function parseStreamingMessage(rawMessage) {
   }
 
   if (message.messageType === "pong") {
-    return { kind: "pong" };
+    return { kind: "pong", rawBytes };
   }
 
   if (message.messageType !== "data-sync") {
-    return { kind: "ignored", messageType: message.messageType };
+    return { kind: "ignored", messageType: message.messageType, rawBytes };
   }
 
   const data = message.data;
@@ -54,11 +55,50 @@ export function parseStreamingMessage(rawMessage) {
     eventType: data.eventType,
     featureFlags: data.featureFlags,
     segments: data.segments,
+    rawBytes,
   };
 }
 
 export function findFeatureFlag(featureFlags, flagKey) {
   return featureFlags.find((flag) => flag && flag.key === flagKey);
+}
+
+export function indexFeatureFlags(featureFlags) {
+  const index = new Map();
+  for (const flag of featureFlags) {
+    if (!flag || typeof flag.key !== "string" || flag.key.length === 0) {
+      throw new Error("feature flag payload contains an invalid key");
+    }
+    if (index.has(flag.key)) {
+      throw new Error(`feature flag payload contains duplicate key '${flag.key}'`);
+    }
+    index.set(flag.key, flag);
+  }
+  return index;
+}
+
+export function utf8ByteLength(value) {
+  const text = String(value ?? "");
+  let bytes = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4;
+        index += 1;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
 }
 
 function requireArray(value, propertyName) {
@@ -117,9 +157,10 @@ export function extractProbeSnapshot(flag) {
     throw new Error("probe flag is archived");
   }
 
-  if (flag.variationType !== "string") {
-    throw new Error("probe flag must be a string flag");
-  }
+  const variationType = normalizeVariationType(
+    flag.variationType,
+    "probe flag variationType",
+  );
 
   const variations = requireArray(flag.variations, "variations");
   const selectedVariationId = selectVariationId(flag);
@@ -128,9 +169,7 @@ export function extractProbeSnapshot(flag) {
     throw new Error(`selected variation '${selectedVariationId}' was not found`);
   }
 
-  if (typeof variation.value !== "string" || variation.value.length === 0) {
-    throw new Error("selected probe variation must have a non-empty string value");
-  }
+  const revision = extractVariationRevision(variation.value, variationType);
 
   const updatedAtMs = Date.parse(flag.updatedAt);
   if (!Number.isFinite(updatedAtMs)) {
@@ -138,8 +177,14 @@ export function extractProbeSnapshot(flag) {
   }
 
   return {
-    revision: variation.value,
+    revision,
     updatedAtMs,
     selectedVariationId,
+    variationType,
+    variationValueBytes: utf8ByteLength(variation.value),
   };
 }
+import {
+  extractVariationRevision,
+  normalizeVariationType,
+} from "./api-controller.js";

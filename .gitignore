@@ -1,4 +1,6 @@
 **/results/
+**/bin/
+**/obj/
 **/k8s-infra/keys/*
 **/k8s-infra/terraform/aks/.terraform/
 **/k8s-infra/terraform/aks/*.tfstate

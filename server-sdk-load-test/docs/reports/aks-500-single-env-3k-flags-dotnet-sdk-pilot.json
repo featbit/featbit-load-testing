@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "qualification": "500-client official .NET SDK pilot",
+  "formalTenThousandConnectionBaseline": false,
+  "runId": "growth-f3k-dotnet-p500-v-20260728130543-8b66",
+  "noFeatBitSourceOrImageChange": true,
+  "workload": {
+    "environmentCount": 1,
+    "flagCount": 3000,
+    "stringFlagCount": 2500,
+    "jsonFlagCount": 500,
+    "jsonVariationBytes": 2048,
+    "sdkPackage": "FeatBit.ServerSdk",
+    "sdkPackageVersion": "1.2.11",
+    "runnerPods": 20,
+    "clientsPerRunner": 25,
+    "totalClients": 500,
+    "clientsPerSecond": 20,
+    "configuredRampSeconds": 25,
+    "warmupPatches": 2,
+    "formalStringRevisions": 8,
+    "formalJsonRevisions": 2,
+    "revisionIntervalSeconds": 30
+  },
+  "infrastructure": {
+    "kubernetesContext": "aks-featbit-load-testing",
+    "featbitNodes": {
+      "count": 3,
+      "vmSize": "Standard_D4ds_v5"
+    },
+    "loadgenNodes": {
+      "count": 10,
+      "vmSize": "Standard_D4ds_v5"
+    },
+    "els": {
+      "replicas": 3,
+      "image": "docker.io/featbit/featbit-evaluation-server:5.4.4",
+      "cpuRequest": "1",
+      "cpuLimit": "3",
+      "memoryRequest": "2Gi",
+      "memoryLimit": "8Gi"
+    },
+    "runnerImage": "featbitloadtesting22793c56acr.azurecr.io/featbit-dotnet-sdk-loadtest@sha256:ee15206675396b2516d5e6b2f7c0a657a1a202ba526331263fb82ecfa07db817",
+    "controllerImage": "featbitloadtesting22793c56acr.azurecr.io/featbit-k6@sha256:1d4cdc7665ebaf3ec267aa7f938da0a5c768bdab9d00b3d8733e24c6e4fd9580",
+    "runnerPerPod": {
+      "cpuRequest": "1",
+      "cpuLimit": null,
+      "memoryRequest": "2Gi",
+      "memoryLimit": "6Gi"
+    }
+  },
+  "initialization": {
+    "readyAtConfiguredRampEnd": 498,
+    "readyBacklogAtConfiguredRampEnd": 2,
+    "lastReadyOffsetMs": 25057,
+    "delayBeyondConfiguredRampMs": 57,
+    "createScheduleDriftMs": {
+      "count": 500,
+      "avg": 0.888,
+      "p50": 0,
+      "p90": 2,
+      "p95": 3,
+      "p99": 9.01,
+      "max": 50
+    },
+    "sdkInitializationLatencyMs": {
+      "count": 500,
+      "avg": 181.566,
+      "p50": 161,
+      "p90": 265.1,
+      "p95": 314.05,
+      "p99": 472.09,
+      "max": 514
+    },
+    "canaryFlagCountChecks": 20,
+    "canaryFlagCountMatches": 20
+  },
+  "health": {
+    "runnerStarted": 20,
+    "runnerFinished": 20,
+    "clientCreateFailures": 0,
+    "readyTimeouts": 0,
+    "invalidVariationObservations": 0,
+    "startGateLateRunners": 0,
+    "postReadyUnhealthyTransitions": 0,
+    "runnerJobSucceeded": 20,
+    "runnerJobFailed": 0
+  },
+  "warmup": {
+    "connectionCoverage": 500,
+    "deliveryCount": 1000,
+    "expectedDeliveryCount": 1000,
+    "meaning": "500 clients x warm-up revision and baseline restore"
+  },
+  "formalPropagation": {
+    "sampleCount": 5000,
+    "expectedSampleCount": 5000,
+    "meaning": "500 clients x 10 formal revisions",
+    "revisionSequenceErrors": 0,
+    "finalRevisionCorrectConnections": 500,
+    "crossNodeClockUncertainty": {
+      "toleranceMs": 10,
+      "negativeProbeSyncSampleCount": 107,
+      "minimumProbeSyncLatencyMs": -2,
+      "valuesClipped": false
+    },
+    "revisions": [
+      {
+        "index": 1,
+        "type": "string",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-0001",
+        "count": 500,
+        "controlPlaneMs": 17,
+        "endToEndMs": { "avg": 31.342, "p50": 24, "p90": 32, "p95": 132, "p99": 148, "max": 266 },
+        "probeSyncMs": { "avg": 14.342, "p50": 7, "p90": 15, "p95": 115, "p99": 131, "max": 249 }
+      },
+      {
+        "index": 2,
+        "type": "string",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-0002",
+        "count": 500,
+        "controlPlaneMs": 18,
+        "endToEndMs": { "avg": 30.08, "p50": 24, "p90": 29, "p95": 30, "p99": 249, "max": 270 },
+        "probeSyncMs": { "avg": 12.08, "p50": 6, "p90": 11, "p95": 12, "p99": 231, "max": 252 }
+      },
+      {
+        "index": 3,
+        "type": "string",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-0003",
+        "count": 500,
+        "controlPlaneMs": 17,
+        "endToEndMs": { "avg": 28.464, "p50": 22, "p90": 29, "p95": 40, "p99": 210, "max": 231 },
+        "probeSyncMs": { "avg": 11.464, "p50": 5, "p90": 12, "p95": 23, "p99": 193, "max": 214 }
+      },
+      {
+        "index": 4,
+        "type": "string",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-0004",
+        "count": 500,
+        "controlPlaneMs": 18,
+        "endToEndMs": { "avg": 29.014, "p50": 25, "p90": 33, "p95": 108, "p99": 159, "max": 159 },
+        "probeSyncMs": { "avg": 11.014, "p50": 7, "p90": 15, "p95": 90, "p99": 141, "max": 141 }
+      },
+      {
+        "index": 5,
+        "type": "string",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-0005",
+        "count": 500,
+        "controlPlaneMs": 19,
+        "endToEndMs": { "avg": 27.4, "p50": 24, "p90": 32, "p95": 54, "p99": 54, "max": 221 },
+        "probeSyncMs": { "avg": 8.4, "p50": 5, "p90": 13, "p95": 35, "p99": 35, "max": 202 }
+      },
+      {
+        "index": 6,
+        "type": "string",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-0006",
+        "count": 500,
+        "controlPlaneMs": 18,
+        "endToEndMs": { "avg": 25.706, "p50": 24, "p90": 28, "p95": 30, "p99": 222, "max": 310 },
+        "probeSyncMs": { "avg": 7.706, "p50": 6, "p90": 10, "p95": 12, "p99": 204, "max": 292 }
+      },
+      {
+        "index": 7,
+        "type": "string",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-0007",
+        "count": 500,
+        "controlPlaneMs": 19,
+        "endToEndMs": { "avg": 23.674, "p50": 22.5, "p90": 31, "p95": 34, "p99": 34, "max": 38 },
+        "probeSyncMs": { "avg": 4.674, "p50": 3.5, "p90": 12, "p95": 15, "p99": 15, "max": 19 }
+      },
+      {
+        "index": 8,
+        "type": "string",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-0008",
+        "count": 500,
+        "controlPlaneMs": 18,
+        "endToEndMs": { "avg": 24.13, "p50": 24, "p90": 28, "p95": 33, "p99": 33.04, "max": 37 },
+        "probeSyncMs": { "avg": 6.13, "p50": 6, "p90": 10, "p95": 15, "p99": 15.04, "max": 19 }
+      },
+      {
+        "index": 9,
+        "type": "json",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-2501",
+        "count": 500,
+        "controlPlaneMs": 20,
+        "endToEndMs": { "avg": 27.978, "p50": 25, "p90": 29, "p95": 33, "p99": 207, "max": 232 },
+        "probeSyncMs": { "avg": 7.978, "p50": 5, "p90": 9, "p95": 13, "p99": 187, "max": 212 }
+      },
+      {
+        "index": 10,
+        "type": "json",
+        "flagKey": "sdk-flagset-3k-g5-v1-flag-2502",
+        "count": 500,
+        "controlPlaneMs": 26,
+        "endToEndMs": { "avg": 34.444, "p50": 31, "p90": 38, "p95": 38, "p99": 212, "max": 251 },
+        "probeSyncMs": { "avg": 8.444, "p50": 5, "p90": 12, "p95": 12, "p99": 186, "max": 225 }
+      }
+    ],
+    "combined": {
+      "endToEndMs": { "count": 5000, "avg": 28.2232, "p50": 24, "p90": 32, "p95": 34, "p99": 186, "max": 310 },
+      "controlPlaneMs": { "count": 10, "avg": 19, "p50": 18, "p90": 20.6, "p95": 23.3, "p99": 25.46, "max": 26 },
+      "probeSyncMs": { "count": 5000, "avg": 9.2232, "p50": 6, "p90": 12, "p95": 15, "p99": 168, "max": 292 }
+    },
+    "deJitterDiagnostic": {
+      "rule": "probe_sync_latency_ms <= 100",
+      "primaryResult": false,
+      "retainedCount": 4911,
+      "removedCount": 89,
+      "removedPercent": 1.78,
+      "endToEndMs": { "count": 4911, "avg": 25.3466, "p50": 24, "p90": 31, "p95": 33, "p99": 54, "max": 114 },
+      "probeSyncMs": { "count": 4911, "avg": 6.3364, "p50": 6, "p90": 11, "p95": 13, "p99": 35, "max": 97 }
+    }
+  },
+  "nodeEvidence": {
+    "expectedNodeFiles": 13,
+    "actualNodeFiles": 13,
+    "targetSampleIntervalSeconds": 1,
+    "rampAndInitialSync": {
+      "loadgen": {
+        "cpuP99Percent": 53.81,
+        "cpuMaxPercent": 54.21,
+        "cpuPressureP99Percent": 24.01,
+        "cpuPressureMaxPercent": 31.36,
+        "runQueueP99": 8,
+        "runQueueMax": 14,
+        "tcpRetransSegments": 78,
+        "packetDrops": 0,
+        "eth0RxGiB": 2.618,
+        "peakNodeRxGbitPerSecond": 0.133
+      },
+      "featbit": {
+        "cpuP99Percent": 36.09,
+        "cpuMaxPercent": 43.17,
+        "cpuPressureP99Percent": 19.43,
+        "cpuPressureMaxPercent": 20.3,
+        "runQueueP99": 13.4,
+        "runQueueMax": 35,
+        "tcpRetransSegments": 42,
+        "packetDrops": 0,
+        "eth0TxGiB": 4.628,
+        "peakNodeTxGbitPerSecond": 1.067
+      }
+    },
+    "formalRevisionWindows": {
+      "loadgen": {
+        "cpuP99Percent": 30.63,
+        "cpuMaxPercent": 38.12,
+        "cpuPressureP99Percent": 21.59,
+        "cpuPressureMaxPercent": 23.89,
+        "runQueueP99": 10.13,
+        "runQueueMax": 15,
+        "tcpRetransSegments": 0,
+        "packetDrops": 0
+      },
+      "featbit": {
+        "cpuP99Percent": 11.01,
+        "cpuMaxPercent": 11.92,
+        "cpuPressureP99Percent": 11.82,
+        "cpuPressureMaxPercent": 14.07,
+        "runQueueP99": 6.48,
+        "runQueueMax": 10,
+        "tcpRetransSegments": 3,
+        "packetDrops": 0
+      }
+    }
+  },
+  "resources": {
+    "sampleIntervalSeconds": 5,
+    "sampleCount": 67,
+    "sampleErrors": 0,
+    "peaks": {
+      "dotnetRunnersAggregate": { "cpuMillicores": 3508.97, "memoryBytes": 8621006848 },
+      "maximumRunnerContainer": { "cpuMillicores": 201.56, "memoryBytes": 509153280 },
+      "elsAggregate": { "cpuMillicores": 467.37, "memoryBytes": 1410166784 },
+      "otherFeatBitAggregate": { "cpuMillicores": 65.12, "memoryBytes": 439681024 },
+      "loadgenNodePool": { "cpuMillicores": 8599.77, "memoryBytes": 37443137536 },
+      "featbitNodePool": { "cpuMillicores": 1457.26, "memoryBytes": 7288164352 },
+      "maximumRunnerProcess": { "cpuCores": 0.7755, "workingSetBytes": 546291712, "threads": 23 }
+    }
+  },
+  "elsEvidence": {
+    "stablePodUids": 3,
+    "restartCountDelta": 0,
+    "cpuPeriods": 11359,
+    "throttledPeriods": 0,
+    "throttledMilliseconds": 0,
+    "logLines": 500,
+    "outOfMemoryLines": 0,
+    "dataSyncMessageHandlerErrorLines": 0,
+    "fatalOrUnhandledLines": 0
+  },
+  "conclusion": {
+    "rampResult": "500 clients at 20/s completed public initialization 57 ms after the configured 25-second ramp boundary",
+    "networkBottleneckSupported": false,
+    "tenThousandClientCapacityEstablished": false,
+    "failedRunsRetained": true,
+    "infrastructureDeleted": false
+  },
+  "artifacts": {
+    "matrix": "../../k8s-infra/matrices/aks-single-environment-3k-flags-dotnet-sdk-p500-els-expanded.json",
+    "runnerReadme": "../../dotnet-sdk-runner/README.md",
+    "runbook": "../../k8s-infra/README-AKS.md#118-official-net-sdk-500-client-pilot"
+  }
+}

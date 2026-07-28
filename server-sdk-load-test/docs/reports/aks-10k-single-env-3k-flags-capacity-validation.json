@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "status": "blocked",
+  "validPropagationBaseline": false,
+  "workload": {
+    "environments": 1,
+    "flags": 3000,
+    "stringFlags": 2500,
+    "jsonFlags": 500,
+    "jsonVariationBytes": 2048,
+    "runners": 20,
+    "connectionsPerRunner": 500,
+    "totalConnections": 10000,
+    "connectionsPerSecond": 100,
+    "configuredRampSeconds": 100,
+    "plannedStringRevisions": 8,
+    "plannedJsonRevisions": 2
+  },
+  "failedValidation": {
+    "runId": "growth-f3k-v-20260727161112-18e5",
+    "failedRunnerJobs": 20,
+    "oomKilledExit137": 5,
+    "additionalErrorExit137": 3,
+    "exactSyncRecords": 167,
+    "expectedSyncRecords": 10000,
+    "payloadBytes": {
+      "min": 5048186,
+      "max": 5635811
+    },
+    "partialConnectionStartScheduleDriftMaxMs": 1148,
+    "partialConnectionOpenScheduleDriftMaxMs": 8542,
+    "partialInitialSyncScheduleDriftMs": {
+      "p50": 355247,
+      "p95": 399145,
+      "p99": 406376,
+      "max": 406509
+    },
+    "partialParseLatencyMs": {
+      "p50": 349903,
+      "p99": 399325,
+      "max": 399403
+    },
+    "formalRevisionsApplied": 0,
+    "baselineFlagsRestored": 10,
+    "resourceEvidenceComplete": true
+  },
+  "quota": {
+    "location": "eastasia",
+    "currentRegionalVcpus": 54,
+    "currentStandardDDSv5Vcpus": 54,
+    "currentLimit": 65,
+    "additionalVcpusRequired": 52,
+    "resultingVcpus": 106,
+    "recommendedLimit": 120
+  },
+  "isolatedMatrix": "../../k8s-infra/matrices/aks-single-environment-3k-flags-g5-d4-isolated.json"
+}
